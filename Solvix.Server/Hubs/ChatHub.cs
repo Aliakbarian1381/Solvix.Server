@@ -1,16 +1,18 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using System.Collections.Concurrent;
 
 
 namespace Solvix.Server.Hubs
 {
     public class ChatHub : Hub
     {
-        private static Dictionary<string, string> UserConnections = new Dictionary<string, string>();
+        private static ConcurrentDictionary<string, string> UserConnections = new();
 
         public override async Task OnConnectedAsync()
         {
-            string username = Context.Query["user"];
-            if (!string.IsNullOrEmpty(username))
+            var httpContext = Context.GetHttpContext();
+
+            if (httpContext != null && httpContext.Request.Query.TryGetValue("user", out var username))
             {
                 UserConnections[username] = Context.ConnectionId;
             }
@@ -20,9 +22,9 @@ namespace Solvix.Server.Hubs
         public override async Task OnDisconnectedAsync(Exception exception)
         {
             var username = UserConnections.FirstOrDefault(x => x.Value == Context.ConnectionId).Key;
-            if (username != null)
+            if (!string.IsNullOrEmpty(username))
             {
-                UserConnections.Remove(username);
+                UserConnections.TryRemove(username, out _);
             }
             await base.OnDisconnectedAsync(exception);
         }
@@ -30,7 +32,8 @@ namespace Solvix.Server.Hubs
         public async Task SendPrivateMessage(string recipientUsername, string message)
         {
             string senderUsername = UserConnections.FirstOrDefault(x => x.Value == Context.ConnectionId).Key;
-            if (senderUsername == null) return; 
+            if (string.IsNullOrEmpty(senderUsername))
+                return;
             if (UserConnections.TryGetValue(recipientUsername, out string recipientConnectionId))
             {
                 await Clients.Client(recipientConnectionId).SendAsync("ReceiveMessage", senderUsername, message);

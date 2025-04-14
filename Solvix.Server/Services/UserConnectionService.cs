@@ -13,11 +13,10 @@ namespace Solvix.Server.Services
             _context = context;
         }
 
-        public async Task AddConnection(int userId, string connectionId)
+        public async Task AddConnection(long userId, string connectionId)
         {
             var existingConnection = await _context.UserConnections
-                .FirstOrDefaultAsync(c => c.ConnectionId == connectionId);
-
+                 .FirstOrDefaultAsync(c => c.ConnectionId == connectionId);
             if (existingConnection != null)
             {
                 existingConnection.UserId = userId;
@@ -41,7 +40,7 @@ namespace Solvix.Server.Services
             }
         }
 
-        public async Task<List<string>> GetConnectionsForUser(int userId)
+        public async Task<List<string>> GetConnectionsForUser(long userId)
         {
             return await _context.UserConnections
                 .Where(c => c.UserId == userId)
@@ -49,17 +48,30 @@ namespace Solvix.Server.Services
                 .ToListAsync();
         }
 
-        public async Task<int> GetUserIdForConnection(string connectionId)
+        public async Task<long?> GetUserIdForConnection(string connectionId)
         {
             var connection = await _context.UserConnections
                 .FirstOrDefaultAsync(c => c.ConnectionId == connectionId);
-            return connection?.UserId ?? 0;
+            return connection?.UserId;
         }
 
-        public async Task<List<User>> GetOnlineUsers()
+        public async Task<List<AppUser>> GetOnlineUsers()
         {
-            var onlineUserIds = await _context.UserConnections.Select(c => c.UserId).Distinct().ToListAsync();
-            return await _context.Users.Where(u => onlineUserIds.Contains(u.Id)).ToListAsync();
+            var onlineUserIds = await _context.UserConnections
+                .Select(c => c.UserId)
+                .Distinct()
+                .ToListAsync();
+
+            var onlineUsers = new List<AppUser>();
+            foreach (var userId in onlineUserIds)
+            {
+                var user = await _context.Users.FindAsync(userId);
+                if (user != null)
+                {
+                    onlineUsers.Add(user);
+                }
+            }
+            return onlineUsers;
         }
 
     }

@@ -7,34 +7,17 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Solvix.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class IdentitySchema : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "AppUserId",
-                table: "UserConnections",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "AppUserId",
-                table: "Messages",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "AppUserId1",
-                table: "Messages",
-                type: "text",
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "AspNetRoles",
                 columns: table => new
                 {
-                    Id = table.Column<string>(type: "text", nullable: false),
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     Name = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     NormalizedName = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     ConcurrencyStamp = table.Column<string>(type: "text", nullable: true)
@@ -45,10 +28,11 @@ namespace Solvix.Server.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                name: "Users",
                 columns: table => new
                 {
-                    Id = table.Column<string>(type: "text", nullable: false),
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     FirstName = table.Column<string>(type: "text", nullable: false),
                     LastName = table.Column<string>(type: "text", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -69,7 +53,7 @@ namespace Solvix.Server.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=", x => x.Id);
+                    table.PrimaryKey("PK_Users", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -78,7 +62,7 @@ namespace Solvix.Server.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    RoleId = table.Column<string>(type: "text", nullable: false),
+                    RoleId = table.Column<long>(type: "bigint", nullable: false),
                     ClaimType = table.Column<string>(type: "text", nullable: true),
                     ClaimValue = table.Column<string>(type: "text", nullable: true)
                 },
@@ -99,7 +83,7 @@ namespace Solvix.Server.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    UserId = table.Column<string>(type: "text", nullable: false),
+                    UserId = table.Column<long>(type: "bigint", nullable: false),
                     ClaimType = table.Column<string>(type: "text", nullable: true),
                     ClaimValue = table.Column<string>(type: "text", nullable: true)
                 },
@@ -107,9 +91,9 @@ namespace Solvix.Server.Migrations
                 {
                     table.PrimaryKey("PK_AspNetUserClaims", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_AspNetUserClaims_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_UserId",
+                        name: "FK_AspNetUserClaims_Users_UserId",
                         column: x => x.UserId,
-                        principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -121,15 +105,15 @@ namespace Solvix.Server.Migrations
                     LoginProvider = table.Column<string>(type: "text", nullable: false),
                     ProviderKey = table.Column<string>(type: "text", nullable: false),
                     ProviderDisplayName = table.Column<string>(type: "text", nullable: true),
-                    UserId = table.Column<string>(type: "text", nullable: false)
+                    UserId = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AspNetUserLogins", x => new { x.LoginProvider, x.ProviderKey });
                     table.ForeignKey(
-                        name: "FK_AspNetUserLogins_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_UserId",
+                        name: "FK_AspNetUserLogins_Users_UserId",
                         column: x => x.UserId,
-                        principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -138,8 +122,8 @@ namespace Solvix.Server.Migrations
                 name: "AspNetUserRoles",
                 columns: table => new
                 {
-                    UserId = table.Column<string>(type: "text", nullable: false),
-                    RoleId = table.Column<string>(type: "text", nullable: false)
+                    UserId = table.Column<long>(type: "bigint", nullable: false),
+                    RoleId = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -151,9 +135,9 @@ namespace Solvix.Server.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_AspNetUserRoles_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_UserId",
+                        name: "FK_AspNetUserRoles_Users_UserId",
                         column: x => x.UserId,
-                        principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -162,7 +146,7 @@ namespace Solvix.Server.Migrations
                 name: "AspNetUserTokens",
                 columns: table => new
                 {
-                    UserId = table.Column<string>(type: "text", nullable: false),
+                    UserId = table.Column<long>(type: "bigint", nullable: false),
                     LoginProvider = table.Column<string>(type: "text", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
                     Value = table.Column<string>(type: "text", nullable: true)
@@ -171,27 +155,60 @@ namespace Solvix.Server.Migrations
                 {
                     table.PrimaryKey("PK_AspNetUserTokens", x => new { x.UserId, x.LoginProvider, x.Name });
                     table.ForeignKey(
-                        name: "FK_AspNetUserTokens_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_UserId",
+                        name: "FK_AspNetUserTokens_Users_UserId",
                         column: x => x.UserId,
-                        principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_UserConnections_AppUserId",
-                table: "UserConnections",
-                column: "AppUserId");
+            migrationBuilder.CreateTable(
+                name: "Messages",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SenderId = table.Column<long>(type: "bigint", nullable: false),
+                    RecipientId = table.Column<long>(type: "bigint", nullable: false),
+                    Content = table.Column<string>(type: "text", nullable: false),
+                    SentAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    ReadAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Messages", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Messages_Recipient",
+                        column: x => x.RecipientId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Messages_Sender",
+                        column: x => x.SenderId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Messages_AppUserId",
-                table: "Messages",
-                column: "AppUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Messages_AppUserId1",
-                table: "Messages",
-                column: "AppUserId1");
+            migrationBuilder.CreateTable(
+                name: "UserConnections",
+                columns: table => new
+                {
+                    ConnectionId = table.Column<string>(type: "text", nullable: false),
+                    UserId = table.Column<long>(type: "bigint", nullable: false),
+                    ConnectedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserConnections", x => x.ConnectionId);
+                    table.ForeignKey(
+                        name: "FK_UserConnections_User",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
@@ -220,53 +237,35 @@ namespace Solvix.Server.Migrations
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Messages_RecipientId",
+                table: "Messages",
+                column: "RecipientId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Messages_SenderId",
+                table: "Messages",
+                column: "SenderId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserConnections_UserId",
+                table: "UserConnections",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "EmailIndex",
-                table: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                table: "Users",
                 column: "NormalizedEmail");
 
             migrationBuilder.CreateIndex(
                 name: "UserNameIndex",
-                table: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
+                table: "Users",
                 column: "NormalizedUserName",
                 unique: true);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Messages_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId",
-                table: "Messages",
-                column: "AppUserId",
-                principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
-                principalColumn: "Id");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Messages_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId1",
-                table: "Messages",
-                column: "AppUserId1",
-                principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
-                principalColumn: "Id");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_UserConnections_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId",
-                table: "UserConnections",
-                column: "AppUserId",
-                principalTable: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=",
-                principalColumn: "Id");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_Messages_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId",
-                table: "Messages");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_Messages_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId1",
-                table: "Messages");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_UserConnections_S!o@l#v$i%xM^e&s*s(e)n_g+e-r=_AppUserId",
-                table: "UserConnections");
-
             migrationBuilder.DropTable(
                 name: "AspNetRoleClaims");
 
@@ -283,34 +282,16 @@ namespace Solvix.Server.Migrations
                 name: "AspNetUserTokens");
 
             migrationBuilder.DropTable(
+                name: "Messages");
+
+            migrationBuilder.DropTable(
+                name: "UserConnections");
+
+            migrationBuilder.DropTable(
                 name: "AspNetRoles");
 
             migrationBuilder.DropTable(
-                name: "S!o@l#v$i%xM^e&s*s(e)n_g+e-r=");
-
-            migrationBuilder.DropIndex(
-                name: "IX_UserConnections_AppUserId",
-                table: "UserConnections");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Messages_AppUserId",
-                table: "Messages");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Messages_AppUserId1",
-                table: "Messages");
-
-            migrationBuilder.DropColumn(
-                name: "AppUserId",
-                table: "UserConnections");
-
-            migrationBuilder.DropColumn(
-                name: "AppUserId",
-                table: "Messages");
-
-            migrationBuilder.DropColumn(
-                name: "AppUserId1",
-                table: "Messages");
+                name: "Users");
         }
     }
 }

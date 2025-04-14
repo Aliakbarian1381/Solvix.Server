@@ -1,15 +1,15 @@
 ﻿using Solvix.Server.Models;
-
+using System.Threading.Tasks;
 
 namespace Solvix.Server.Services
 {
     public interface IUserConnectionService
     {
-        Task AddConnection(int userId, string connectionId);
+        Task AddConnection(long userId, string connectionId);
         Task RemoveConnection(string connectionId);
-        Task<List<string>> GetConnectionsForUser(int userId);
-        Task<int> GetUserIdForConnection(string connectionId);
-        Task<List<User>> GetOnlineUsers();
+        Task<List<string>> GetConnectionsForUser(long userId);
+        Task<long?> GetUserIdForConnection(string connectionId);
+        Task<List<AppUser>> GetOnlineUsers();
 
     }
 }

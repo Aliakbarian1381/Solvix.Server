@@ -3,11 +3,13 @@
 
 namespace Solvix.Server.Services
 {
+
     public interface IMessageService
     {
-        Task<Message> SaveMessage(int senderId, int recipientId, string content);
-        Task<List<Message>> GetUnreadMessagesForUser(int userId);
-        Task MarkMessageAsRead(int messageId);
-
+        Task<Message> SaveMessage(long senderId, long recipientId, string content);
+        Task<List<Message>> GetUnreadMessagesForUser(long userId); 
+        Task MarkMessagesAsRead(long senderId, long recipientId); 
+        Task<Message> GetMessageById(int id);
+        Task<List<Message>> GetChatHistory(long userId, long otherUserId);
     }
 }

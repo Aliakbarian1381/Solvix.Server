@@ -13,7 +13,7 @@ namespace Solvix.Server.Services
             _context = context;
         }
 
-        public async Task<Message> SaveMessage(int senderId, int recipientId, string content)
+        public async Task<Message> SaveMessage(long senderId, long recipientId, string content)
         {
             var message = new Message
             {
@@ -27,7 +27,23 @@ namespace Solvix.Server.Services
             return message;
         }
 
-        public async Task<List<Message>> GetUnreadMessagesForUser(int userId)
+        public async Task<Message> GetMessageById(int id)
+        {
+            return await _context.Messages.FindAsync(id);
+        }
+
+
+        public async Task<List<Message>> GetChatHistory(long userId, long otherUserId)   // تغییر به string
+        {
+            return await _context.Messages
+                .Where(m => (m.SenderId == userId && m.RecipientId == otherUserId) || (m.SenderId == otherUserId && m.RecipientId == userId))
+                .OrderBy(m => m.SentAt)
+                .ToListAsync();
+        }
+
+
+
+        public async Task<List<Message>> GetUnreadMessagesForUser(long userId)
         {
             return await _context.Messages
                 .Where(m => m.RecipientId == userId && m.ReadAt == null)
@@ -35,14 +51,16 @@ namespace Solvix.Server.Services
                 .ToListAsync();
         }
 
-        public async Task MarkMessageAsRead(int messageId)
+        public async Task MarkMessagesAsRead(long senderId, long recipientId)
         {
-            var message = await _context.Messages.FindAsync(messageId);
-            if (message != null)
+            var unreadMessages = await _context.Messages
+                .Where(m => m.SenderId == senderId && m.RecipientId == recipientId && m.ReadAt == null)
+                .ToListAsync();
+            foreach (var message in unreadMessages)
             {
                 message.ReadAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
             }
+            await _context.SaveChangesAsync();
         }
     }
 }

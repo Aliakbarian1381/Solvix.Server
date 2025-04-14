@@ -1,9 +1,13 @@
-using Solvix.Server.Hubs;
+﻿using Solvix.Server.Hubs;
 using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Data;
 using Solvix.Server.Services;
 using Microsoft.AspNetCore.Identity;
 using Solvix.Server.Models;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Text;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,8 +20,9 @@ builder.Services.AddDbContext<ChatDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMessageService, MessageService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
-builder.Services.AddIdentity<AppUser, IdentityRole>()
+builder.Services.AddIdentity<AppUser, IdentityRole<long>>()
     .AddEntityFrameworkStores<ChatDbContext>()
     .AddDefaultTokenProviders();
 
@@ -33,6 +38,55 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.SignIn.RequireConfirmedEmail = false;
     options.SignIn.RequireConfirmedPhoneNumber = false;
 });
+
+builder.Services.AddAuthentication(options =>
+{
+options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+options.TokenValidationParameters = new TokenValidationParameters
+{
+    ValidateIssuer = true,
+
+    ValidateAudience = true,
+    ValidateLifetime = true,
+    ValidateIssuerSigningKey = true, 
+    ValidIssuer = builder.Configuration["Jwt:Issuer"], 
+    ValidAudience = builder.Configuration["Jwt:Audience"],
+    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+};
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
+});
+
+// CORS Configuration
+//var clientAppUrl = builder.Configuration["ClientAppUrl"] ?? "https://localhost:7001"; // آدرس کلاینت خود را اینجا یا در appsettings قرار دهید
+
+//builder.Services.AddCors(options =>
+//{
+//    options.AddPolicy("AllowClientApp", // یک نام برای Policy انتخاب کنید
+//               corsBuilder => // نام متغیر را به corsBuilder تغییر دادم
+//               {
+//                   corsBuilder.WithOrigins(clientAppUrl) // آدرس دقیق کلاینت
+//                          .AllowAnyMethod()
+//                          .AllowAnyHeader()
+//                          .AllowCredentials(); // <<-- **بسیار مهم برای ارسال کوکی‌ها با SignalR**
+//               });
+//});
 
 //builder.Services.AddCors(options =>
 //{
@@ -55,6 +109,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+//app.UseCors("AllowClientApp"); // <<-- فعال کردن Policy
 
 app.UseAuthentication();
 app.UseAuthorization();

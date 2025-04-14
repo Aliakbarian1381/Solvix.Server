@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Data;
 using Solvix.Server.Models;
 
@@ -6,22 +7,28 @@ namespace Solvix.Server.Services
 {
     public class UserService : IUserService
     {
-        private readonly ChatDbContext _context;
+        private readonly UserManager<AppUser> _userManager;
 
-        public UserService(ChatDbContext context)
+
+        public UserService(UserManager<AppUser> userManager)
         {
-            _context = context;
+            _userManager = userManager;
         }
 
-        public async Task<User> GetUserByUsername(string username)
+
+        public async Task<AppUser> GetUserByUsername(string username)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            return await _userManager.FindByNameAsync(username);
         }
 
-        public async Task<User> GetUserById(int id)
+        public async Task<AppUser> GetUserById(string id)
         {
-            return await _context.Users.FindAsync(id);
+            return await _userManager.FindByIdAsync(id);
         }
 
+        public async Task<IdentityResult> CreateUserAsync(AppUser user, string password)
+        {
+            return await _userManager.CreateAsync(user, password);
+        }
     }
 }

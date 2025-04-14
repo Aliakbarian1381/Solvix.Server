@@ -1,30 +1,24 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace Solvix.Server.Data
 
 
 {
-    public class ChatDbContext : IdentityDbContext<AppUser>
+    public class ChatDbContext : IdentityDbContext<AppUser, IdentityRole<long>, long>
     {
         public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options)
         {
         }
 
-        public DbSet<User> Users { get; set; }
         public DbSet<Message> Messages { get; set; }
         public DbSet<UserConnection> UserConnections { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
-            modelBuilder.Entity<User>(entity =>
-            {
-                entity.HasIndex(e => e.Username).IsUnique();
-            });
-
 
             modelBuilder.Entity<Message>(entity =>
             {
@@ -53,7 +47,7 @@ namespace Solvix.Server.Data
 
             modelBuilder.Entity<AppUser>(entity =>
             {
-                entity.ToTable("S!o@l#v$i%xM^e&s*s(e)n_g+e-r=");
+                entity.ToTable("Users");
             });
         }
     }

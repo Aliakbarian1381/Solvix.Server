@@ -48,32 +48,17 @@ namespace Solvix.Server.Controllers
 
 
             }
-            try
+
+            return Ok(new UserDto
             {
-                Console.WriteLine("🟢 user.Id = " + user.Id);
-                Console.WriteLine("🟢 user.UserName = " + user.UserName);
-                Console.WriteLine("🟢 user.FirstName = " + user.FirstName);
-                Console.WriteLine("🟢 user.LastName = " + user.LastName);
+                Id = user.Id,
+                Username = user.UserName,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Token = _tokenService.CreateToken(user)
+            });
 
-                var token = _tokenService.CreateToken(user);
-                Console.WriteLine("🟢 token = " + token);
 
-
-                return Ok(new UserDto
-                {
-                    Id = user.Id,
-                    Username = user.UserName,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                    Token = _tokenService.CreateToken(user)
-                });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("🔥 Exception in return OK:");
-                Console.WriteLine(ex.ToString());
-                return StatusCode(500, "خطای ساخت پاسخ");
-            }
         }
 
 
@@ -105,7 +90,7 @@ namespace Solvix.Server.Controllers
         }
 
         [HttpGet("currentuser")]
-        [Authorize] 
+        [Authorize]
         public async Task<ActionResult<UserDto>> GetCurrentUser()
         {
             var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

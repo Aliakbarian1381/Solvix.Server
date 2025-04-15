@@ -110,5 +110,24 @@ namespace Solvix.Server.Controllers
                 LastName = user.LastName
             });
         }
+
+
+        [Authorize]
+        [HttpPut("update-profile")]
+        public async Task<IActionResult> UpdateProfile(UpdateProfileDto dto)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId is null) return Unauthorized();
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user is null) return NotFound();
+
+            user.FirstName = dto.FirstName;
+            user.LastName = dto.LastName;
+
+            await _userManager.UpdateAsync(user);
+
+            return Ok(new { message = "اطلاعات با موفقیت ذخیره شد." });
+        }
     }
 }

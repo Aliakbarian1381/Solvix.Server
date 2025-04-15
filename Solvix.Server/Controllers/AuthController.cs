@@ -44,17 +44,36 @@ namespace Solvix.Server.Controllers
 
             if (!result.Succeeded)
             {
-                return BadRequest(result.Errors.Select(e => e.Description));
+                return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+
 
             }
-            return Ok(new UserDto
+            try
             {
-                Id = user.Id,
-                Username = user.UserName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Token = _tokenService.CreateToken(user)
-            });
+                Console.WriteLine("🟢 user.Id = " + user.Id);
+                Console.WriteLine("🟢 user.UserName = " + user.UserName);
+                Console.WriteLine("🟢 user.FirstName = " + user.FirstName);
+                Console.WriteLine("🟢 user.LastName = " + user.LastName);
+
+                var token = _tokenService.CreateToken(user);
+                Console.WriteLine("🟢 token = " + token);
+
+
+                return Ok(new UserDto
+                {
+                    Id = user.Id,
+                    Username = user.UserName,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    Token = _tokenService.CreateToken(user)
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("🔥 Exception in return OK:");
+                Console.WriteLine(ex.ToString());
+                return StatusCode(500, "خطای ساخت پاسخ");
+            }
         }
 
 

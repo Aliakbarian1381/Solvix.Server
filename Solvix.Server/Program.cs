@@ -25,6 +25,9 @@ builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
 builder.Services.AddIdentity<AppUser, IdentityRole<long>>()
     .AddEntityFrameworkStores<ChatDbContext>()
     .AddDefaultTokenProviders();
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
 
 builder.Services.Configure<IdentityOptions>(options =>
 {

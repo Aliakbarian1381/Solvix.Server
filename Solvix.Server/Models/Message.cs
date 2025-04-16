@@ -3,12 +3,15 @@
     public class Message
     {
         public int Id { get; set; }
+
         public long SenderId { get; set; }
-        public AppUser Sender { get; set; }
-        public long RecipientId { get; set; }
-        public AppUser Recipient { get; set; }
-        public string Content { get; set; }
-        public DateTime SentAt { get; set; }
+        public AppUser Sender { get; set; } = default!;
+
+        public Guid ChatId { get; set; }
+        public Chat Chat { get; set; } = default!;
+
+        public string Content { get; set; } = string.Empty;
+        public DateTime SentAt { get; set; } = DateTime.UtcNow;
         public DateTime? ReadAt { get; set; }
     }
 }

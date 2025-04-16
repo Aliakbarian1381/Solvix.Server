@@ -1,11 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Solvix.Server.Models;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+﻿// ChatDbContext.cs
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Solvix.Server.Models;
 
 namespace Solvix.Server.Data
-
-
 {
     public class ChatDbContext : IdentityDbContext<AppUser, IdentityRole<long>, long>
     {
@@ -15,42 +14,61 @@ namespace Solvix.Server.Data
 
         public DbSet<Message> Messages { get; set; }
         public DbSet<UserConnection> UserConnections { get; set; }
+        public DbSet<Chat> Chats { get; set; }
+        public DbSet<ChatParticipant> ChatParticipants { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
+            modelBuilder.Entity<AppUser>(entity =>
+            {
+                entity.ToTable("Users");
+            });
+
             modelBuilder.Entity<Message>(entity =>
             {
-                entity.HasOne(d => d.Sender)
-                    .WithMany(p => p.SentMessages)
-                    .HasForeignKey(d => d.SenderId)
-                    .OnDelete(DeleteBehavior.Restrict)
-                    .HasConstraintName("FK_Messages_Sender");
+                entity.HasKey(m => m.Id);
 
-                entity.HasOne(d => d.Recipient)
-                    .WithMany(p => p.ReceivedMessages)
-                    .HasForeignKey(d => d.RecipientId)
-                    .OnDelete(DeleteBehavior.Restrict)
-                    .HasConstraintName("FK_Messages_Recipient");
+                entity.HasOne(m => m.Sender)
+                      .WithMany()
+                      .HasForeignKey(m => m.SenderId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(m => m.Chat)
+                      .WithMany(c => c.Messages)
+                      .HasForeignKey(m => m.ChatId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<UserConnection>(entity =>
             {
                 entity.HasKey(e => e.ConnectionId);
                 entity.HasOne(d => d.User)
-                    .WithMany(p => p.Connections)
-                    .HasForeignKey(d => d.UserId)
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .HasConstraintName("FK_UserConnections_User");
+                      .WithMany(p => p.Connections)
+                      .HasForeignKey(d => d.UserId)
+                      .OnDelete(DeleteBehavior.Cascade)
+                      .HasConstraintName("FK_UserConnections_User");
             });
 
-            modelBuilder.Entity<AppUser>(entity =>
+            modelBuilder.Entity<Chat>(entity =>
             {
-                entity.ToTable("Users");
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("NOW() at time zone 'utc'");
+            });
+
+            modelBuilder.Entity<ChatParticipant>(entity =>
+            {
+                entity.HasKey(cp => new { cp.ChatId, cp.UserId });
+
+                entity.HasOne(cp => cp.Chat)
+                      .WithMany(c => c.Participants)
+                      .HasForeignKey(cp => cp.ChatId);
+
+                entity.HasOne(cp => cp.User)
+                      .WithMany()
+                      .HasForeignKey(cp => cp.UserId);
             });
         }
     }
 }
-
-

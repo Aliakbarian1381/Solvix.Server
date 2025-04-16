@@ -21,15 +21,19 @@ namespace Solvix.Server.Controllers
             _tokenService = tokenService;
         }
 
+        [HttpGet("check-phone/{phoneNumber}")]
+        public async Task<IActionResult> CheckPhone(string phoneNumber)
+        {
+            var user = await _userManager.FindByNameAsync(phoneNumber);
+            return Ok(new { exists = user != null });
+        }
+
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto registerDto)
         {
             var existingUser = await _userManager.FindByNameAsync(registerDto.PhoneNumber);
-
             if (existingUser != null)
-            {
                 return BadRequest(new { message = "این شماره تلفن قبلا ثبت شده است." });
-            }
 
             var user = new AppUser
             {
@@ -41,13 +45,8 @@ namespace Solvix.Server.Controllers
             };
 
             var result = await _userManager.CreateAsync(user, registerDto.Password);
-
             if (!result.Succeeded)
-            {
                 return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
-
-
-            }
 
             return Ok(new UserDto
             {
@@ -57,27 +56,18 @@ namespace Solvix.Server.Controllers
                 LastName = user.LastName,
                 Token = _tokenService.CreateToken(user)
             });
-
-
         }
-
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto loginDto)
         {
             var user = await _userManager.FindByNameAsync(loginDto.PhoneNumber);
-
             if (user == null)
-            {
                 return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
-            }
 
             var isPasswordValid = await _userManager.CheckPasswordAsync(user, loginDto.Password);
-
             if (!isPasswordValid)
-            {
                 return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
-            }
 
             return Ok(new UserDto
             {
@@ -94,17 +84,10 @@ namespace Solvix.Server.Controllers
         public async Task<ActionResult<UserDto>> GetCurrentUser()
         {
             var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdString))
-            {
-                return Unauthorized();
-            }
+            if (string.IsNullOrEmpty(userIdString)) return Unauthorized();
 
             var user = await _userManager.FindByIdAsync(userIdString);
-
-            if (user == null)
-            {
-                return NotFound(new { message = "کاربر یافت نشد" });
-            }
+            if (user == null) return NotFound(new { message = "کاربر یافت نشد" });
 
             return Ok(new UserDto
             {
@@ -113,25 +96,6 @@ namespace Solvix.Server.Controllers
                 FirstName = user.FirstName,
                 LastName = user.LastName
             });
-        }
-
-
-        [Authorize]
-        [HttpPut("update-profile")]
-        public async Task<IActionResult> UpdateProfile(UpdateProfileDto dto)
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userId is null) return Unauthorized();
-
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) return NotFound();
-
-            user.FirstName = dto.FirstName;
-            user.LastName = dto.LastName;
-
-            await _userManager.UpdateAsync(user);
-
-            return Ok(new { message = "اطلاعات با موفقیت ذخیره شد." });
         }
     }
 }

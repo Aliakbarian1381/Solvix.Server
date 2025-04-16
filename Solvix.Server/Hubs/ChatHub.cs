@@ -9,17 +9,17 @@ namespace Solvix.Server.Hubs
     public class ChatHub : Hub
     {
         private readonly IUserService _userService;
-        private readonly IMessageService _messageService;
+        //private readonly IMessageService _messageService;
         private readonly IUserConnectionService _userConnectionService;
         private readonly ILogger<ChatHub> _logger;
 
-        public ChatHub(ILogger<ChatHub> logger, IUserService userService, IMessageService messageService, IUserConnectionService userConnectionService)
-        {
-            _logger = logger;
-            _userService = userService;
-            _messageService = messageService;
-            _userConnectionService = userConnectionService;
-        }
+        //public ChatHub(ILogger<ChatHub> logger, IUserService userService, IMessageService messageService, IUserConnectionService userConnectionService)
+        //{
+        //    _logger = logger;
+        //    _userService = userService;
+        //    _messageService = messageService;
+        //    _userConnectionService = userConnectionService;
+        //}
 
 
 
@@ -113,7 +113,7 @@ namespace Solvix.Server.Hubs
 
             try
             {
-                await _messageService.SaveMessage(senderId, recipientUser.Id, message);
+                //await _messageService.SaveMessage(senderId, recipientUser.Id, message);
 
                 var recipientConnections = await _userConnectionService.GetConnectionsForUser(recipientUser.Id);
                 if (recipientConnections.Any())

@@ -113,5 +113,39 @@ namespace Solvix.Server.Controllers
 
             return Ok(messages);
         }
+
+
+        [HttpPost("/api/messages")]
+        public async Task<IActionResult> SendMessage([FromBody] SendMessageDto dto)
+        {
+            var userId = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            // اطمینان از عضویت در چت
+            var isParticipant = await _context.ChatParticipants
+                .AnyAsync(cp => cp.ChatId == dto.ChatId && cp.UserId == userId);
+
+            if (!isParticipant)
+                return Forbid();
+
+            var message = new Message
+            {
+                ChatId = dto.ChatId,
+                SenderId = userId,
+                Content = dto.Content,
+                SentAt = DateTime.UtcNow
+            };
+
+            _context.Messages.Add(message);
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+
+        public class SendMessageDto
+        {
+            public Guid ChatId { get; set; }
+            public string Content { get; set; } = "";
+        }
+
     }
 }

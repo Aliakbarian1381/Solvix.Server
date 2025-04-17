@@ -5,7 +5,6 @@ using Solvix.Server.Models;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 
-
 namespace Solvix.Server.Controllers
 {
     [ApiController]
@@ -73,13 +72,11 @@ namespace Solvix.Server.Controllers
             {
                 IsGroup = false
             };
-
             _context.Chats.Add(chat);
             _context.ChatParticipants.AddRange(
                 new ChatParticipant { Chat = chat, UserId = userId },
                 new ChatParticipant { Chat = chat, UserId = recipientUserId }
             );
-
             await _context.SaveChangesAsync();
 
             return Ok(new { chat.Id, alreadyExists = false });
@@ -97,6 +94,17 @@ namespace Solvix.Server.Controllers
 
             if (!isParticipant)
                 return Forbid();
+
+            // ✅ علامت زدن پیام‌ها به عنوان خوانده شده توسط کاربر فعلی
+            var unreadMessages = await _context.Messages
+                .Where(m => m.ChatId == chatId && m.SenderId != userId && m.IsRead == false)
+                .ToListAsync();
+
+            foreach (var message in unreadMessages)
+            {
+                message.IsRead = true;
+            }
+            await _context.SaveChangesAsync();
 
             var messages = await _context.Messages
                 .Where(m => m.ChatId == chatId)
@@ -132,7 +140,8 @@ namespace Solvix.Server.Controllers
                 ChatId = dto.ChatId,
                 SenderId = userId,
                 Content = dto.Content,
-                SentAt = DateTime.UtcNow
+                SentAt = DateTime.UtcNow,
+                IsRead = false // پیام جدید خوانده نشده است
             };
 
             _context.Messages.Add(message);

@@ -7,6 +7,7 @@ using Solvix.Server.Models;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Text;
+using System.Security.Claims;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,9 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.SignIn.RequireConfirmedPhoneNumber = false;
 });
 
+var jwtKey = builder.Configuration["Jwt:Key"];
+Console.WriteLine("📢 JWT KEY: " + jwtKey);
+
 builder.Services.AddAuthentication(options =>
 {
 options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -52,29 +56,44 @@ options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 options.TokenValidationParameters = new TokenValidationParameters
 {
     ValidateIssuer = true,
-
     ValidateAudience = true,
     ValidateLifetime = true,
     ValidateIssuerSigningKey = true, 
     ValidIssuer = builder.Configuration["Jwt:Issuer"], 
     ValidAudience = builder.Configuration["Jwt:Audience"],
-    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+    ClockSkew = TimeSpan.Zero
 };
 
     options.Events = new JwtBearerEvents
     {
+        OnAuthenticationFailed = context =>
+        {
+            var x = context.Exception.Message;
+            Console.WriteLine("JWT FAILED: " + x);
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            Console.WriteLine("✅ TOKEN VALIDATED for user: " +
+                context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            return Task.CompletedTask;
+        },
         OnMessageReceived = context =>
         {
-            var accessToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
+            if (context.HttpContext.Request.Path.StartsWithSegments("/chathub"))
             {
-                context.Token = accessToken;
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    context.Token = accessToken;
+                }
             }
             return Task.CompletedTask;
         }
     };
 });
+
 
 // CORS Configuration
 //var clientAppUrl = builder.Configuration["ClientAppUrl"] ?? "https://localhost:7001"; // آدرس کلاینت خود را اینجا یا در appsettings قرار دهید
@@ -91,16 +110,16 @@ options.TokenValidationParameters = new TokenValidationParameters
 //               });
 //});
 
-//builder.Services.AddCors(options =>
-//{
-//    options.AddPolicy("AllowAll",
-//               builder =>
-//               {
-//            builder.AllowAnyOrigin()
-//                   .AllowAnyMethod()
-//                   .AllowAnyHeader();
-//        });
-//});
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+               builder =>
+               {
+                   builder.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+               });
+});
 
 var app = builder.Build();
 

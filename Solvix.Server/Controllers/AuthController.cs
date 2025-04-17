@@ -5,6 +5,7 @@ using Solvix.Server.Dtos;
 using Solvix.Server.Models;
 using Solvix.Server.Services;
 using System.Security.Claims;
+using System.Threading.Channels;
 
 namespace Solvix.Server.Controllers
 {
@@ -24,8 +25,17 @@ namespace Solvix.Server.Controllers
         [HttpGet("check-phone/{phoneNumber}")]
         public async Task<IActionResult> CheckPhone(string phoneNumber)
         {
-            var user = await _userManager.FindByNameAsync(phoneNumber);
-            return Ok(new { exists = user != null });
+            try
+            {
+                var user = await _userManager.FindByNameAsync(phoneNumber);
+                return Ok(new { exists = user != null });
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return Ok(new { exists = "" != null });
+            }
+
         }
 
         [HttpPost("register")]

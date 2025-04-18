@@ -28,23 +28,23 @@ namespace Solvix.Server.Controllers
             var userId = GetUserId();
 
             var chats = await _context.ChatParticipants
-                .Where(cp => cp.UserId == userId)
-                .Select(cp => new
-                {
-                    cp.Chat.Id,
-                    cp.Chat.IsGroup,
-                    cp.Chat.Title,
-                    LastMessage = cp.Chat.Messages
-                        .OrderByDescending(m => m.SentAt)
-                        .Select(m => new
-                        {
-                            m.Content,
-                            m.SentAt,
-                            Sender = m.Sender.FirstName + " " + m.Sender.LastName
-                        })
-                        .FirstOrDefault()
-                })
-                .ToListAsync();
+    .Where(cp => cp.UserId == userId)
+    .Select(cp => new
+    {
+        cp.Chat.Id,
+        cp.Chat.IsGroup,
+        cp.Chat.Title,
+        LastMessage = cp.Chat.Messages
+            .OrderByDescending(m => m.SentAt)
+            .Select(m => m.Content)
+            .FirstOrDefault() ?? "",
+        LastMessageTime = cp.Chat.Messages
+            .OrderByDescending(m => m.SentAt)
+            .Select(m => m.SentAt)
+            .FirstOrDefault(),
+        UnreadCount = cp.Chat.Messages.Count(m => m.SenderId != userId && !m.IsRead)
+    })
+    .ToListAsync();
 
             return Ok(chats);
         }

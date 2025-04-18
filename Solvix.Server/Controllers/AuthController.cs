@@ -71,22 +71,31 @@ namespace Solvix.Server.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto loginDto)
         {
-            var user = await _userManager.FindByNameAsync(loginDto.PhoneNumber);
-            if (user == null)
-                return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
-
-            var isPasswordValid = await _userManager.CheckPasswordAsync(user, loginDto.Password);
-            if (!isPasswordValid)
-                return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
-
-            return Ok(new UserDto
+            try
             {
-                Id = user.Id,
-                Username = user.UserName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Token = _tokenService.CreateToken(user)
-            });
+                var user = await _userManager.FindByNameAsync(loginDto.PhoneNumber);
+                if (user == null)
+                    return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
+
+                var isPasswordValid = await _userManager.CheckPasswordAsync(user, loginDto.Password);
+                if (!isPasswordValid)
+                    return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
+
+                return Ok(new UserDto
+                {
+                    Id = user.Id,
+                    Username = user.UserName,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    Token = _tokenService.CreateToken(user)
+                });
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+            
         }
 
         [HttpGet("currentuser")]

@@ -32,8 +32,20 @@ namespace Solvix.Server.Controllers
         {
             try
             {
+                _logger.LogInformation("Received check-phone request for: {PhoneNumber}", phoneNumber);
+
+                if (string.IsNullOrWhiteSpace(phoneNumber))
+                {
+                    _logger.LogWarning("Empty phone number provided");
+                    return BadRequest(new { message = "El número de teléfono no puede estar vacío" });
+                }
+
                 var user = await _userManager.FindByNameAsync(phoneNumber);
-                return Ok(new { exists = user != null });
+                var exists = user != null;
+
+                _logger.LogInformation("Phone check result for {PhoneNumber}: {Exists}", phoneNumber, exists);
+
+                return Ok(new { exists });
             }
             catch (Exception e)
             {

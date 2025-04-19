@@ -7,9 +7,11 @@ using Solvix.Server.Services;
 using System.Security.Claims;
 using Microsoft.Extensions.Logging; 
 using Solvix.Server.Helpers;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Solvix.Server.Controllers
 {
+    [EnableRateLimiting("AuthLimit")]
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : BaseController

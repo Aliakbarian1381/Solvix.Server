@@ -188,5 +188,82 @@ namespace Solvix.Server.Services
             return await _context.ChatParticipants
                 .AnyAsync(cp => cp.ChatId == chatId && cp.UserId == userId);
         }
+
+
+        public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds, long readerUserId)
+        {
+            if (messageIds == null || !messageIds.Any())
+                return;
+
+            var messages = await _context.Messages
+                .Include(m => m.Chat)
+                .ThenInclude(c => c.Participants)
+                .Where(m => messageIds.Contains(m.Id) && m.SenderId != readerUserId && !m.IsRead)
+                .ToListAsync();
+
+            if (!messages.Any())
+                return;
+
+            // Group by ChatId to check permissions once per chat
+            var messagesByChat = messages.GroupBy(m => m.ChatId);
+
+            foreach (var chatGroup in messagesByChat)
+            {
+                var chatId = chatGroup.Key;
+                var firstMessage = chatGroup.First();
+
+                // Check if user is participant in this chat
+                if (!firstMessage.Chat.Participants.Any(p => p.UserId == readerUserId))
+                {
+                    _logger.LogWarning("User {UserId} tried to mark messages as read in chat {ChatId} without being a participant.", readerUserId, chatId);
+                    continue;
+                }
+
+                // Mark all messages in this chat as read
+                foreach (var message in chatGroup)
+                {
+                    message.IsRead = true;
+                    message.ReadAt = DateTime.UtcNow;
+                }
+            }
+
+            // Save all changes at once
+            try
+            {
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("{Count} messages marked as read by User {UserId}", messages.Count, readerUserId);
+
+                // Notify senders about read messages
+                var messagesBySender = messages.GroupBy(m => m.SenderId);
+
+                foreach (var senderGroup in messagesBySender)
+                {
+                    var senderId = senderGroup.Key;
+                    var senderConnections = await _userConnectionService.GetConnectionsForUser(senderId);
+
+                    foreach (var connectionId in senderConnections.Where(c => !string.IsNullOrEmpty(c)))
+                    {
+                        foreach (var message in senderGroup)
+                        {
+                            await _hubContext.Clients.Client(connectionId).SendAsync(
+                                "MessageRead",
+                                message.ChatId,
+                                message.Id
+                            );
+                        }
+                    }
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Failed to mark messages as read by User {UserId}.", readerUserId);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An unexpected error occurred while marking messages as read by User {UserId}.", readerUserId);
+                throw;
+            }
+        }
     }
 }

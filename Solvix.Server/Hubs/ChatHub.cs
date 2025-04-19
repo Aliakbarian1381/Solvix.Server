@@ -102,6 +102,25 @@ namespace Solvix.Server.Hubs
             }
         }
 
+        public async Task MarkMultipleMessagesAsRead(List<int> messageIds)
+        {
+            var userId = GetUserIdFromContext();
+            if (!userId.HasValue) return;
+
+            try
+            {
+                foreach (var messageId in messageIds)
+                {
+                    await _chatService.MarkMessageAsReadAsync(messageId, userId.Value);
+                }
+                _logger.LogInformation("User {UserId} marked {Count} messages as read", userId.Value, messageIds.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling ChatService.MarkMessageAsReadAsync for multiple messages by User {UserId}.", userId.Value);
+            }
+        }
+
         public async Task MarkMessageAsRead(int messageId)
         {
             var readerUserId = GetUserIdFromContext();

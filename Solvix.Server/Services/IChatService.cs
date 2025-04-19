@@ -9,6 +9,8 @@ namespace Solvix.Server.Services
         // Optional: Add method for marking message as read if that logic is moved here
         Task MarkMessageAsReadAsync(int messageId, long readerUserId);
         Task<bool> IsUserParticipantAsync(Guid chatId, long userId);
+        Task MarkMultipleMessagesAsReadAsync(List<int> messageIds, long readerUserId);
+
 
     }
 }

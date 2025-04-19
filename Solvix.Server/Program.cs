@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Text;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Antiforgery;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -84,6 +86,43 @@ options.TokenValidationParameters = new TokenValidationParameters
 
 });
 
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "X-CSRF-TOKEN";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 100,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1)
+            })
+    );
+
+    // Stricter limits for auth endpoints
+    options.AddPolicy("AuthLimit", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 10,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(5)
+            })
+    );
+});
+
 
 // CORS Configuration
 //var clientAppUrl = builder.Configuration["ClientAppUrl"] ?? "https://localhost:7001"; // آدرس کلاینت خود را اینجا یا در appsettings قرار دهید
@@ -119,6 +158,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+app.UseRateLimiter();
+
 
 app.UseHttpsRedirection();
 
@@ -130,5 +171,38 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.MapHub<ChatHub>("/chathub");
+
+app.Use(async (context, next) =>
+{
+    // Skip for GET, HEAD, OPTIONS, TRACE
+    if (!HttpMethods.IsPost(context.Request.Method) &&
+        !HttpMethods.IsPut(context.Request.Method) &&
+        !HttpMethods.IsPatch(context.Request.Method) &&
+        !HttpMethods.IsDelete(context.Request.Method))
+    {
+        await next(context);
+        return;
+    }
+
+    // Skip for SignalR paths
+    if (context.Request.Path.StartsWithSegments("/chathub"))
+    {
+        await next(context);
+        return;
+    }
+
+    // Validate CSRF token for API requests
+    var antiforgery = context.RequestServices.GetRequiredService<IAntiforgery>();
+    try
+    {
+        await antiforgery.ValidateRequestAsync(context);
+        await next(context);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { message = "Invalid CSRF token" });
+    }
+});
 
 app.Run();

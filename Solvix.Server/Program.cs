@@ -13,16 +13,17 @@ using System.Security.Claims;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+// اضافه کردن Hub
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<ChatDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddScoped<IUserService, UserService>();
-//builder.Services.AddScoped<IMessageService, MessageService>();
-builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
 builder.Services.AddIdentity<AppUser, IdentityRole<long>>()
     .AddEntityFrameworkStores<ChatDbContext>()
     .AddDefaultTokenProviders();

@@ -3,13 +3,11 @@ using Solvix.Server.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+
 
 namespace Solvix.Server.Services
 {
-    public interface ITokenService
-    {
-        string CreateToken(AppUser user);
-    }
 
     public class TokenService : ITokenService
     {

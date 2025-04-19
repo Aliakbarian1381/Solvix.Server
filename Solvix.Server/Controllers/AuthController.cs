@@ -5,21 +5,24 @@ using Solvix.Server.Dtos;
 using Solvix.Server.Models;
 using Solvix.Server.Services;
 using System.Security.Claims;
-using System.Threading.Channels;
+using Microsoft.Extensions.Logging; 
+using Solvix.Server.Helpers;
 
 namespace Solvix.Server.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AuthController : ControllerBase
+    public class AuthController : BaseController
     {
         private readonly UserManager<AppUser> _userManager;
         private readonly ITokenService _tokenService;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(UserManager<AppUser> userManager, ITokenService tokenService)
+        public AuthController(UserManager<AppUser> userManager, ITokenService tokenService, ILogger<AuthController> logger)
         {
             _userManager = userManager;
             _tokenService = tokenService;
+            _logger = logger;
         }
 
         [HttpGet("check-phone/{phoneNumber}")]
@@ -32,10 +35,9 @@ namespace Solvix.Server.Controllers
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.Message);
-                return Ok(new { exists = "" != null });
+                _logger.LogError(e, "Error checking phone number {PhoneNumber}", phoneNumber);
+                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An error occurred while checking the phone number." });
             }
-
         }
 
         [HttpPost("register")]
@@ -55,17 +57,11 @@ namespace Solvix.Server.Controllers
             };
 
             var result = await _userManager.CreateAsync(user, registerDto.Password);
+
             if (!result.Succeeded)
                 return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
-            return Ok(new UserDto
-            {
-                Id = user.Id,
-                Username = user.UserName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Token = _tokenService.CreateToken(user)
-            });
+            return Ok(UserMappingHelper.MapAppUserToUserDto(user, _tokenService.CreateToken(user)));
         }
 
         [HttpPost("login")]
@@ -81,40 +77,35 @@ namespace Solvix.Server.Controllers
                 if (!isPasswordValid)
                     return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
 
-                return Ok(new UserDto
-                {
-                    Id = user.Id,
-                    Username = user.UserName,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                    Token = _tokenService.CreateToken(user)
-                });
+                return Ok(UserMappingHelper.MapAppUserToUserDto(user, _tokenService.CreateToken(user)));
             }
             catch (Exception ex)
             {
-
-                throw;
+                _logger.LogError(ex, "Error during login for phone number {PhoneNumber}", loginDto.PhoneNumber); // استفاده از logger
+                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An error occurred during login." });
             }
-            
         }
 
         [HttpGet("currentuser")]
         [Authorize]
         public async Task<ActionResult<UserDto>> GetCurrentUser()
         {
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdString)) return Unauthorized();
+            long userId;
+            try
+            {
+                userId = GetUserId();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized attempt to get current user: {Message}", ex.Message);
+                return Unauthorized("User ID could not be determined.");
+            }
 
-            var user = await _userManager.FindByIdAsync(userIdString);
+
+            var user = await _userManager.FindByIdAsync(userId.ToString());
             if (user == null) return NotFound(new { message = "کاربر یافت نشد" });
 
-            return Ok(new UserDto
-            {
-                Id = user.Id,
-                Username = user.UserName,
-                FirstName = user.FirstName,
-                LastName = user.LastName
-            });
+            return Ok(UserMappingHelper.MapAppUserToUserDto(user));
         }
     }
 }

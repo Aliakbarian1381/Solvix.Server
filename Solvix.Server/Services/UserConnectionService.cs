@@ -62,15 +62,12 @@ namespace Solvix.Server.Services
                 .Distinct()
                 .ToListAsync();
 
-            var onlineUsers = new List<AppUser>();
-            foreach (var userId in onlineUserIds)
-            {
-                var user = await _context.Users.FindAsync(userId);
-                if (user != null)
-                {
-                    onlineUsers.Add(user);
-                }
-            }
+            var onlineUsers = await (from connection in _context.UserConnections
+                                     join user in _context.Users on connection.UserId equals user.Id
+                                     select user)
+                            .Distinct()
+                            .ToListAsync();
+
             return onlineUsers;
         }
 

@@ -1,53 +1,49 @@
-﻿using Solvix.Server.Hubs;
-using Microsoft.EntityFrameworkCore;
-using Solvix.Server.Data;
-using Solvix.Server.Services;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Solvix.Server.Models;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Solvix.Server.API.Hubs;
+using Solvix.Server.Application.Services;
+using Solvix.Server.Core.Entities;
+using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Data;
+using Solvix.Server.Infrastructure.Repositories;
+using Solvix.Server.Infrastructure.Services;
 using System.Text;
-using System.Security.Claims;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Antiforgery;
-
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<ITokenService, TokenService>();
-// اضافه کردن Hub
-builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// DbContext
 builder.Services.AddDbContext<ChatDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddIdentity<AppUser, IdentityRole<long>>()
-    .AddEntityFrameworkStores<ChatDbContext>()
-    .AddDefaultTokenProviders();
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
 
-
-builder.Services.Configure<IdentityOptions>(options =>
+// Identity
+builder.Services.AddIdentity<AppUser, IdentityRole<long>>(options =>
 {
     options.Password.RequireDigit = false;
     options.Password.RequireLowercase = false;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequireUppercase = false;
-    options.Password.RequiredLength = 1;
+    options.Password.RequiredLength = 8;
     options.Password.RequiredUniqueChars = 1;
 
     options.SignIn.RequireConfirmedEmail = false;
     options.SignIn.RequireConfirmedPhoneNumber = false;
-});
+})
+.AddEntityFrameworkStores<ChatDbContext>()
+.AddDefaultTokenProviders();
 
+// JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
-Console.WriteLine("📢 JWT KEY: " + jwtKey);
+var issuer = builder.Configuration["Jwt:Issuer"];
+var audience = builder.Configuration["Jwt:Audience"];
 
 builder.Services.AddAuthentication(options =>
 {
@@ -62,8 +58,8 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidIssuer = issuer,
+        ValidAudience = audience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.Zero
     };
@@ -83,18 +79,25 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         }
     };
-
 });
 
-builder.Services.AddAntiforgery(options =>
-{
-    options.HeaderName = "X-CSRF-TOKEN";
-    options.Cookie.Name = "X-CSRF-TOKEN";
-    options.Cookie.HttpOnly = true;
-    options.Cookie.SameSite = SameSiteMode.Strict;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-});
+// Repositories
+builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IChatRepository, ChatRepository>();
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
+// Services
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
+builder.Services.AddSingleton<ITokenService, TokenService>();
+
+// SignalR
+builder.Services.AddSignalR();
+
+// Rate Limiting
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
@@ -123,32 +126,22 @@ builder.Services.AddRateLimiter(options =>
     );
 });
 
-
-// CORS Configuration
-//var clientAppUrl = builder.Configuration["ClientAppUrl"] ?? "https://localhost:7001"; // آدرس کلاینت خود را اینجا یا در appsettings قرار دهید
-
-//builder.Services.AddCors(options =>
-//{
-//    options.AddPolicy("AllowClientApp", // یک نام برای Policy انتخاب کنید
-//               corsBuilder => // نام متغیر را به corsBuilder تغییر دادم
-//               {
-//                   corsBuilder.WithOrigins(clientAppUrl) // آدرس دقیق کلاینت
-//                          .AllowAnyMethod()
-//                          .AllowAnyHeader()
-//                          .AllowCredentials(); // <<-- **بسیار مهم برای ارسال کوکی‌ها با SignalR**
-//               });
-//});
-
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
-               builder =>
-               {
-                   builder.AllowAnyOrigin()
-                          .AllowAnyMethod()
-                          .AllowAnyHeader();
-               });
+        builder =>
+        {
+            builder.AllowAnyOrigin()
+                   .AllowAnyMethod()
+                   .AllowAnyHeader();
+        });
 });
+
+// Logging
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 var app = builder.Build();
 
@@ -157,19 +150,24 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    // فقط در محیط توسعه اجرا شود
+    app.UseDeveloperExceptionPage();
 }
+else
+{
+    app.UseExceptionHandler("/api/error");
+    app.UseHsts();
+}
+
 app.UseRateLimiter();
-
-
 app.UseHttpsRedirection();
-
-//app.UseCors("AllowClientApp"); // <<-- فعال کردن Policy
+app.UseCors("AllowAll");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
 app.MapHub<ChatHub>("/chathub");
 
 app.Use(async (context, next) =>
@@ -184,27 +182,16 @@ app.Use(async (context, next) =>
         return;
     }
 
-    // Skip for SignalR paths
+    // Skip for SignalR and Auth paths
     if (context.Request.Path.StartsWithSegments("/chathub") ||
-                context.Request.Path.StartsWithSegments("/api/auth"))
-
+        context.Request.Path.StartsWithSegments("/api/auth"))
     {
         await next(context);
         return;
     }
 
-    // Validate CSRF token for API requests
-    var antiforgery = context.RequestServices.GetRequiredService<IAntiforgery>();
-    try
-    {
-        await antiforgery.ValidateRequestAsync(context);
-        await next(context);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await context.Response.WriteAsJsonAsync(new { message = "Invalid CSRF token" });
-    }
+    // ادامه مسیر پردازش برای سایر درخواست‌ها
+    await next(context);
 });
 
 app.Run();

@@ -25,4 +25,10 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="API\Middleware\" />
+    <Folder Include="Core\Specifications\" />
+    <Folder Include="Infrastructure\Data\" />
+  </ItemGroup>
+
 </Project>

@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
-using Solvix.Server.Models;
+using Solvix.Server.Core.Entities;
 
 namespace Solvix.Server.Data
 {

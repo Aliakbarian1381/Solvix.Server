@@ -37,7 +37,7 @@ namespace Solvix.Server.Controllers
                 if (string.IsNullOrWhiteSpace(phoneNumber))
                 {
                     _logger.LogWarning("Empty phone number provided");
-                    return BadRequest(new { message = "El número de teléfono no puede estar vacío" });
+                    return BadRequest(new { message = "شماره تلفن نمیتواند خالی باشد!" });
                 }
 
                 var user = await _userManager.FindByNameAsync(phoneNumber);

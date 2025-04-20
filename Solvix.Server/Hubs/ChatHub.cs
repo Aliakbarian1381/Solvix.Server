@@ -80,9 +80,7 @@ namespace Solvix.Server.Hubs
 
                 await _chatService.BroadcastMessageAsync(savedMessage);
 
-
-                // کلاینت فرستنده ممکن است نیاز به تاییدیه یا جزئیات پیام ذخیره شده داشته باشد.
-                // await Clients.Caller.SendAsync("MessageSentConfirmation", savedMessage.Id);
+                await Clients.Caller.SendAsync("MessageSentConfirmation", savedMessage.Id);
 
             }
             catch (ArgumentException ex)

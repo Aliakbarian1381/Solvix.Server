@@ -51,22 +51,22 @@ Console.WriteLine("📢 JWT KEY: " + jwtKey);
 
 builder.Services.AddAuthentication(options =>
 {
-options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(options =>
 {
-options.TokenValidationParameters = new TokenValidationParameters
-{
-    ValidateIssuer = true,
-    ValidateAudience = true,
-    ValidateLifetime = true,
-    ValidateIssuerSigningKey = true, 
-    ValidIssuer = builder.Configuration["Jwt:Issuer"], 
-    ValidAudience = builder.Configuration["Jwt:Audience"],
-    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-    ClockSkew = TimeSpan.Zero
-};
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ClockSkew = TimeSpan.Zero
+    };
 
     options.Events = new JwtBearerEvents
     {
@@ -185,7 +185,9 @@ app.Use(async (context, next) =>
     }
 
     // Skip for SignalR paths
-    if (context.Request.Path.StartsWithSegments("/chathub"))
+    if (context.Request.Path.StartsWithSegments("/chathub") ||
+                context.Request.Path.StartsWithSegments("/api/auth"))
+
     {
         await next(context);
         return;

@@ -1,4 +1,5 @@
-FROM mcr.microsoft.comdotnetsdk7.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+
 WORKDIR src
 
 
@@ -11,7 +12,7 @@ WORKDIR srcSolvix.Server
 RUN dotnet publish -c Release -o apppublish
 
 
-FROM mcr.microsoft.comdotnetaspnet7.0
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR app
 COPY --from=build apppublish .
 

@@ -20,6 +20,7 @@ namespace Solvix.Server.Application.Helpers
                 LastName = user.LastName,
                 PhoneNumber = user.PhoneNumber,
                 Token = token ?? "",
+                IsOnline = true,
                 LastActive = user.LastActiveAt
             };
         }

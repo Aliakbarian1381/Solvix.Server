@@ -114,7 +114,13 @@ namespace Solvix.Server.API.Controllers
                 await _userManager.UpdateAsync(user);
 
                 var userDto = MappingHelper.MapToUserDto(user, _tokenService.CreateToken(user));
-                return Ok(userDto, "ورود با موفقیت انجام شد.");
+
+                return Ok(new ApiResponse<UserDto>
+                {
+                    Success = true,
+                    Message = "ورود با موفقیت انجام شد.",
+                    Data = userDto
+                });
             }
             catch (Exception ex)
             {

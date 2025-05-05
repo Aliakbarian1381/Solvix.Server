@@ -31,7 +31,27 @@ namespace Solvix.Server.Application.Services
             try
             {
                 var chats = await _unitOfWork.ChatRepository.GetUserChatsAsync(userId);
-                return chats.Select(chat => MappingHelper.MapToChatDto(chat, userId)).ToList();
+
+                var participantIds = chats
+                    .SelectMany(c => c.Participants)
+                    .Select(p => p.UserId)
+                    .Where(id => id != userId)
+                    .Distinct()
+                    .ToList();
+
+                var onlineStatuses = new Dictionary<long, bool>();
+
+                foreach (var id in participantIds)
+                {
+                    onlineStatuses[id] = await _userConnectionService.IsUserOnlineAsync(id);
+                }
+
+                onlineStatuses[userId] = true;
+
+                var chatDtos = chats.Select(chat => MappingHelper.MapToChatDto(chat, userId, onlineStatuses)).ToList();
+
+
+                return chatDtos;
             }
             catch (Exception ex)
             {
@@ -44,16 +64,30 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
+                _logger.LogInformation("Fetching chat {ChatId} for user {UserId}", chatId, userId);
                 var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(chatId);
-
                 if (chat == null)
+                {
+                    _logger.LogWarning("Chat {ChatId} not found.", chatId);
                     return null;
+                }
 
-                // بررسی آیا کاربر عضو چت است
                 if (!await IsUserParticipantAsync(chatId, userId))
+                {
+                    _logger.LogWarning("User {UserId} is not a participant of chat {ChatId}.", userId, chatId);
                     return null;
+                }
 
-                return MappingHelper.MapToChatDto(chat, userId);
+                var participantIds = chat.Participants.Select(p => p.UserId).Distinct().ToList();
+                var onlineStatuses = new Dictionary<long, bool>();
+                foreach (var id in participantIds)
+                {
+                    onlineStatuses[id] = await _userConnectionService.IsUserOnlineAsync(id);
+                }
+
+                var chatDto = MappingHelper.MapToChatDto(chat, userId, onlineStatuses);
+                _logger.LogInformation("Returning ChatDto for chat {ChatId}", chatId);
+                return chatDto;
             }
             catch (Exception ex)
             {
@@ -64,43 +98,23 @@ namespace Solvix.Server.Application.Services
 
         public async Task<(Guid chatId, bool alreadyExists)> StartChatWithUserAsync(long initiatorUserId, long recipientUserId)
         {
-            if (initiatorUserId == recipientUserId)
-            {
-                throw new InvalidOperationException("Cannot start a chat with yourself");
-            }
-
+            if (initiatorUserId == recipientUserId) throw new InvalidOperationException("Cannot start a chat with yourself");
             try
             {
-                // بررسی آیا چت خصوصی قبلاً وجود دارد
                 var existingChat = await _unitOfWork.ChatRepository.GetPrivateChatBetweenUsersAsync(initiatorUserId, recipientUserId);
+                if (existingChat != null) return (existingChat.Id, true);
 
-                if (existingChat != null)
-                {
-                    return (existingChat.Id, true);
-                }
-
-                // ساخت چت جدید
-                var chat = new Chat
-                {
-                    IsGroup = false,
-                    CreatedAt = DateTime.UtcNow
-                };
-
+                var chat = new Chat { IsGroup = false, CreatedAt = DateTime.UtcNow };
                 await _unitOfWork.ChatRepository.AddAsync(chat);
-
-                // افزودن شرکت‌کنندگان
                 await _unitOfWork.ChatRepository.AddParticipantAsync(chat.Id, initiatorUserId);
                 await _unitOfWork.ChatRepository.AddParticipantAsync(chat.Id, recipientUserId);
-
                 await _unitOfWork.CompleteAsync();
-
+                _logger.LogInformation("New chat created between {User1} and {User2}. ChatId: {ChatId}", initiatorUserId, recipientUserId, chat.Id);
                 return (chat.Id, false);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error starting chat between users {InitiatorId} and {RecipientId}",
-                    initiatorUserId, recipientUserId);
-                throw;
+                _logger.LogError(ex, "Error starting chat between {User1} and {User2}", initiatorUserId, recipientUserId); throw;
             }
         }
 

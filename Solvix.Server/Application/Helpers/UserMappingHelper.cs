@@ -1,11 +1,13 @@
 ﻿using Solvix.Server.Application.DTOs;
 using Solvix.Server.Core.Entities;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Solvix.Server.Application.Helpers
 {
     public static class MappingHelper
     {
-        public static UserDto MapToUserDto(AppUser user, string? token = null)
+        public static UserDto MapToUserDto(AppUser user, bool isOnline, string? token = null)
         {
             if (user == null)
             {
@@ -19,8 +21,8 @@ namespace Solvix.Server.Application.Helpers
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 PhoneNumber = user.PhoneNumber,
-                Token = token ?? "",
-                IsOnline = true,
+                Token = token,
+                IsOnline = isOnline,
                 LastActive = user.LastActiveAt
             };
         }
@@ -32,35 +34,40 @@ namespace Solvix.Server.Application.Helpers
                 throw new ArgumentNullException(nameof(message), "Message cannot be null for mapping.");
             }
 
+            var senderName = message.Sender != null
+                             ? $"{message.Sender.FirstName} {message.Sender.LastName}".Trim()
+                             : "کاربر نامشخص";
+
             return new MessageDto
             {
                 Id = message.Id,
                 Content = message.Content,
                 SentAt = message.SentAt,
                 SenderId = message.SenderId,
-                SenderName = message.Sender != null ? $"{message.Sender.FirstName} {message.Sender.LastName}".Trim() : "",
+                SenderName = senderName,
                 ChatId = message.ChatId,
                 IsRead = message.IsRead,
                 ReadAt = message.ReadAt,
-                IsEdited = false, // فعلا بدون پشتیبانی از ویرایش
+                IsEdited = false,
                 EditedAt = null
             };
         }
 
-        public static ChatDto MapToChatDto(Chat chat, long currentUserId)
+        public static ChatDto MapToChatDto(Chat chat, long currentUserId, Dictionary<long, bool> onlineStatuses)
         {
-            if (chat == null)
-            {
-                throw new ArgumentNullException(nameof(chat), "Chat cannot be null for mapping.");
-            }
+            if (chat == null) { throw new ArgumentNullException(nameof(chat)); }
 
             string? title = chat.Title;
-            if (!chat.IsGroup && string.IsNullOrWhiteSpace(title))
+
+            if (!chat.IsGroup && chat.Participants != null)
             {
-                var otherParticipant = chat.Participants?.FirstOrDefault(p => p.UserId != currentUserId)?.User;
-                if (otherParticipant != null)
+                var otherParticipant = chat.Participants.FirstOrDefault(p => p.UserId != currentUserId);
+                if (otherParticipant?.User != null)
                 {
-                    title = $"{otherParticipant.FirstName} {otherParticipant.LastName}".Trim();
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        title = $"{otherParticipant.User.FirstName} {otherParticipant.User.LastName}".Trim();
+                    }
                 }
             }
 
@@ -71,12 +78,15 @@ namespace Solvix.Server.Application.Helpers
             {
                 Id = chat.Id,
                 IsGroup = chat.IsGroup,
-                Title = title,
+                Title = title ?? (chat.IsGroup ? "گروه" : "چت"),
                 CreatedAt = chat.CreatedAt,
                 LastMessage = lastMessage?.Content,
                 LastMessageTime = lastMessage?.SentAt,
                 UnreadCount = unreadCount,
-                Participants = chat.Participants?.Select(p => MapToUserDto(p.User)).ToList() ?? new List<UserDto>()
+                Participants = chat.Participants?.Select(p => MapToUserDto(
+                                                                p.User,
+                                                                onlineStatuses.GetValueOrDefault(p.UserId, false)
+                                                            )).ToList() ?? new List<UserDto>()
             };
         }
     }

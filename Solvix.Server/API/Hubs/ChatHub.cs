@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using Solvix.Server.Application;
 using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Infrastructure.Repositories;
 using System.Security.Claims;
 
 namespace Solvix.Server.API.Hubs
@@ -12,17 +14,20 @@ namespace Solvix.Server.API.Hubs
         private readonly IUserConnectionService _connectionService;
         private readonly IChatService _chatService;
         private readonly IUserService _userService;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<ChatHub> _logger;
 
         public ChatHub(
             IUserConnectionService connectionService,
             IChatService chatService,
             IUserService userService,
+            IUnitOfWork unitOfWork,
             ILogger<ChatHub> logger)
         {
             _connectionService = connectionService;
             _chatService = chatService;
             _userService = userService;
+            _unitOfWork = unitOfWork;
             _logger = logger;
         }
 
@@ -87,33 +92,43 @@ namespace Solvix.Server.API.Hubs
             await base.OnDisconnectedAsync(exception);
         }
 
-        public async Task SendToChat(Guid chatId, string messageContent)
+        public async Task SendToChat(Guid chatId, string messageContent, string correlationId)
         {
             var senderUserId = GetUserIdFromContext();
             if (!senderUserId.HasValue)
             {
+                _logger.LogError("User ID not found in token claims");
                 await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت. امکان ارسال پیام وجود ندارد.");
                 return;
             }
 
             try
             {
+                _logger.LogInformation("Received message from user {UserId} to chat {ChatId}: {Content}",
+                    senderUserId.Value, chatId, messageContent.Substring(0, Math.Min(20, messageContent.Length)));
+
+                // بررسی عضویت کاربر در چت
+                if (!await _chatService.IsUserParticipantAsync(chatId, senderUserId.Value))
+                {
+                    _logger.LogWarning("User {UserId} is not a participant of chat {ChatId}", senderUserId.Value, chatId);
+                    await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
+                    return;
+                }
+
+                // ذخیره پیام در دیتابیس
                 var savedMessage = await _chatService.SaveMessageAsync(chatId, senderUserId.Value, messageContent);
-                await _chatService.BroadcastMessageAsync(savedMessage);
 
                 // ارسال تأییدیه به فرستنده
-                await Clients.Caller.SendAsync("MessageSentConfirmation", savedMessage.Id);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogWarning("User {UserId} attempted to send message to Chat {ChatId} without being a participant. Error: {Error}",
-                    senderUserId.Value, chatId, ex.Message);
-                await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
+                await Clients.Caller.SendAsync("MessageCorrelationConfirmation", correlationId, savedMessage.Id);
+
+                // انتشار پیام به همه شرکت‌کنندگان در چت
+                await _chatService.BroadcastMessageAsync(savedMessage);
+
+                _logger.LogInformation("Message saved and broadcast successfully. ID: {MessageId}", savedMessage.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending message to Chat {ChatId} by User {UserId}.",
-                    chatId, senderUserId.Value);
+                _logger.LogError(ex, "Error in SendToChat for chat {ChatId}", chatId);
                 await Clients.Caller.SendAsync("ReceiveError", "خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
             }
         }
@@ -126,12 +141,35 @@ namespace Solvix.Server.API.Hubs
 
             try
             {
-                await _chatService.MarkMessageAsReadAsync(messageId, readerUserId.Value);
+                var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
+                if (message == null || message.SenderId == readerUserId.Value)
+                {
+                    return;
+                }
+
+                if (!await _chatService.IsUserParticipantAsync(message.ChatId, readerUserId.Value))
+                {
+                    return;
+                }
+
+                await _unitOfWork.MessageRepository.MarkAsReadAsync(messageId, readerUserId.Value);
+                await _unitOfWork.CompleteAsync();
+                _logger.LogInformation("Message {MessageId} marked as read by user {UserId}", messageId, readerUserId.Value);
+
+                var senderConnections = await _connectionService.GetConnectionsForUserAsync(message.SenderId);
+                foreach (var connectionId in senderConnections)
+                {
+                    await Clients.Client(connectionId).SendAsync(
+                        "MessageStatusChanged",
+                        message.ChatId,
+                        messageId,
+                        Constants.MessageStatus.Read
+                    );
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error marking message {MessageId} as read by User {UserId}.",
-                    messageId, readerUserId.Value);
+                _logger.LogError(ex, "Error marking message {MessageId} as read", messageId);
             }
         }
 
@@ -149,6 +187,47 @@ namespace Solvix.Server.API.Hubs
             {
                 _logger.LogError(ex, "Error marking multiple messages as read by User {UserId}.",
                     readerUserId.Value);
+            }
+        }
+
+
+        public async Task UserTyping(Guid chatId, bool isTyping)
+        {
+            var typingUserId = GetUserIdFromContext();
+            if (!typingUserId.HasValue)
+                return;
+
+            try
+            {
+                // Verify user is a participant of the chat
+                if (await _chatService.IsUserParticipantAsync(chatId, typingUserId.Value))
+                {
+                    // Get all other participants in the chat
+                    var chat = await _chatService.GetChatByIdAsync(chatId, typingUserId.Value);
+                    if (chat == null) return;
+
+                    foreach (var participant in chat.Participants.Where(p => p.Id != typingUserId.Value))
+                    {
+                        var connections = await _connectionService.GetConnectionsForUserAsync(participant.Id);
+                        foreach (var connectionId in connections)
+                        {
+                            await Clients.Client(connectionId).SendAsync(
+                                "UserTyping",
+                                chatId,
+                                typingUserId.Value,
+                                isTyping
+                            );
+                        }
+                    }
+
+                    _logger.LogDebug("User {UserId} typing status ({IsTyping}) sent to participants of chat {ChatId}",
+                        typingUserId.Value, isTyping, chatId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting typing status for User {UserId} in chat {ChatId}",
+                    typingUserId.Value, chatId);
             }
         }
 

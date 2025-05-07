@@ -17,11 +17,12 @@ namespace Solvix.Server.Infrastructure.Repositories
         public async Task<List<Message>> GetChatMessagesAsync(Guid chatId, int skip = 0, int take = 50)
         {
             return await _chatDbContext.Messages
-                .Include(m => m.Sender)
+                .Include(m => m.Sender) 
                 .Where(m => m.ChatId == chatId)
-                .OrderBy(m => m.SentAt)
+                .OrderByDescending(m => m.SentAt) 
                 .Skip(skip)
                 .Take(take)
+                .OrderBy(m => m.SentAt)
                 .ToListAsync();
         }
 
@@ -41,38 +42,35 @@ namespace Solvix.Server.Infrastructure.Repositories
         public async Task MarkAsReadAsync(int messageId, long userId)
         {
             var message = await _chatDbContext.Messages
-                .Include(m => m.Chat)
-                .ThenInclude(c => c.Participants)
                 .FirstOrDefaultAsync(m => m.Id == messageId);
 
-            if (message == null || message.SenderId == userId || message.IsRead)
-                return;
-
-            // بررسی آیا کاربر عضو چت است
-            if (!message.Chat.Participants.Any(p => p.UserId == userId))
+            if (message == null || message.IsRead || message.SenderId == userId)
                 return;
 
             message.IsRead = true;
             message.ReadAt = DateTime.UtcNow;
+
         }
 
         public async Task MarkMultipleAsReadAsync(List<int> messageIds, long userId)
         {
-            var messages = await _chatDbContext.Messages
-                .Include(m => m.Chat)
-                .ThenInclude(c => c.Participants)
+            if (messageIds == null || !messageIds.Any())
+                return;
+
+            var messagesToUpdate = await _chatDbContext.Messages
                 .Where(m => messageIds.Contains(m.Id) && m.SenderId != userId && !m.IsRead)
                 .ToListAsync();
 
-            foreach (var message in messages)
+            if (!messagesToUpdate.Any()) return;
+
+
+            var now = DateTime.UtcNow;
+            foreach (var message in messagesToUpdate)
             {
-                // بررسی آیا کاربر عضو چت است
-                if (message.Chat.Participants.Any(p => p.UserId == userId))
-                {
-                    message.IsRead = true;
-                    message.ReadAt = DateTime.UtcNow;
-                }
+                message.IsRead = true;
+                message.ReadAt = now;
             }
+
         }
     }
 }

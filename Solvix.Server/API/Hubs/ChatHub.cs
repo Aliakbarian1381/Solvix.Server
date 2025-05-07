@@ -165,6 +165,47 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
+
+        public async Task UserTyping(Guid chatId, bool isTyping)
+        {
+            var typingUserId = GetUserIdFromContext();
+            if (!typingUserId.HasValue)
+                return;
+
+            try
+            {
+                // Verify user is a participant of the chat
+                if (await _chatService.IsUserParticipantAsync(chatId, typingUserId.Value))
+                {
+                    // Get all other participants in the chat
+                    var chat = await _chatService.GetChatByIdAsync(chatId, typingUserId.Value);
+                    if (chat == null) return;
+
+                    foreach (var participant in chat.Participants.Where(p => p.Id != typingUserId.Value))
+                    {
+                        var connections = await _connectionService.GetConnectionsForUserAsync(participant.Id);
+                        foreach (var connectionId in connections)
+                        {
+                            await Clients.Client(connectionId).SendAsync(
+                                "UserTyping",
+                                chatId,
+                                typingUserId.Value,
+                                isTyping
+                            );
+                        }
+                    }
+
+                    _logger.LogDebug("User {UserId} typing status ({IsTyping}) sent to participants of chat {ChatId}",
+                        typingUserId.Value, isTyping, chatId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting typing status for User {UserId} in chat {ChatId}",
+                    typingUserId.Value, chatId);
+            }
+        }
+
         private async Task NotifyUserStatusChanged(long userId, bool isOnline)
         {
             // دریافت چت‌های خصوصی کاربر

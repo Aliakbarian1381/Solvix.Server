@@ -87,7 +87,7 @@ namespace Solvix.Server.API.Hubs
             await base.OnDisconnectedAsync(exception);
         }
 
-        public async Task SendToChat(Guid chatId, string messageContent, string correlationId)
+        public async Task SendToChat(Guid chatId, string messageContent)
         {
             var senderUserId = GetUserIdFromContext();
             if (!senderUserId.HasValue)
@@ -96,26 +96,13 @@ namespace Solvix.Server.API.Hubs
                 return;
             }
 
-            // اعتبارسنجی correlationId
-            if (string.IsNullOrEmpty(correlationId))
-            {
-                correlationId = Guid.NewGuid().ToString("N"); // ایجاد correlationId اگر ارائه نشده باشد
-            }
-
             try
             {
-                // ذخیره پیام و دریافت نسخه ذخیره شده
                 var savedMessage = await _chatService.SaveMessageAsync(chatId, senderUserId.Value, messageContent);
-
-                // ارسال تأییدیه همبستگی به فرستنده
-                await Clients.Caller.SendAsync("MessageCorrelationConfirmation", correlationId, savedMessage.Id);
-
-                // انتشار پیام به همه اعضای چت
                 await _chatService.BroadcastMessageAsync(savedMessage);
 
-                // لاگ موفقیت
-                _logger.LogInformation("Message sent to chat {ChatId} by user {UserId} with correlation {CorrelationId}, assigned ID {MessageId}",
-                    chatId, senderUserId.Value, correlationId, savedMessage.Id);
+                // ارسال تأییدیه به فرستنده
+                await Clients.Caller.SendAsync("MessageSentConfirmation", savedMessage.Id);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -125,8 +112,8 @@ namespace Solvix.Server.API.Hubs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending message to Chat {ChatId} by User {UserId} with correlation {CorrelationId}.",
-                    chatId, senderUserId.Value, correlationId);
+                _logger.LogError(ex, "Error sending message to Chat {ChatId} by User {UserId}.",
+                    chatId, senderUserId.Value);
                 await Clients.Caller.SendAsync("ReceiveError", "خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
             }
         }

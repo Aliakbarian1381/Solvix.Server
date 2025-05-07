@@ -2,7 +2,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.Extensions.Configuration;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
 
@@ -11,7 +10,6 @@ namespace Solvix.Server.Infrastructure.Services
 
     public class TokenService : ITokenService
     {
-        private readonly IConfiguration _configuration;
         private readonly SymmetricSecurityKey _key;
         private readonly string _issuer;
         private readonly string _audience;
@@ -19,24 +17,41 @@ namespace Solvix.Server.Infrastructure.Services
 
         public TokenService(IConfiguration configuration)
         {
-            _configuration = configuration;
-            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-            _issuer = _configuration["Jwt:Issuer"];
-            _audience = _configuration["Jwt:Audience"];
-            _tokenLifetime = TimeSpan.FromDays(7); // مدت اعتبار توکن
+            var jwtKey = configuration["Jwt:Key"];
+            if (string.IsNullOrEmpty(jwtKey))
+            {
+                throw new InvalidOperationException("JWT Key not configured in appsettings.json");
+            }
+            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+            var issuerValue = configuration["Jwt:Issuer"];
+            if (string.IsNullOrEmpty(issuerValue))
+            {
+                throw new InvalidOperationException("JWT Issuer not configured in appsettings.json");
+            }
+            _issuer = issuerValue;
+
+            var audienceValue = configuration["Jwt:Audience"];
+            if (string.IsNullOrEmpty(audienceValue))
+            {
+                throw new InvalidOperationException("JWT Audience not configured in appsettings.json");
+            }
+            _audience = audienceValue;
+
+            _tokenLifetime = TimeSpan.FromDays(7);
         }
+
 
         public string CreateToken(AppUser user)
         {
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName ?? ""),
+                new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            // اضافه کردن شماره تلفن به claim ها اگر وجود داشته باشد
             if (!string.IsNullOrEmpty(user.PhoneNumber))
             {
                 claims.Add(new Claim(ClaimTypes.MobilePhone, user.PhoneNumber));
@@ -62,7 +77,6 @@ namespace Solvix.Server.Infrastructure.Services
         public ClaimsPrincipal? ValidateTokenWithoutLifetime(string token)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-
             try
             {
                 var principal = tokenHandler.ValidateToken(token, new TokenValidationParameters
@@ -73,7 +87,6 @@ namespace Solvix.Server.Infrastructure.Services
                     ValidIssuer = _issuer,
                     ValidAudience = _audience,
                     IssuerSigningKey = _key,
-                    // اعتبارسنجی بدون در نظر گرفتن زمان انقضا
                     ValidateLifetime = false
                 }, out _);
 

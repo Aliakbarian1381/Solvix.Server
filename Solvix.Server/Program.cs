@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Solvix.Server.API.Hubs;
@@ -13,18 +12,16 @@ using Solvix.Server.Infrastructure.Services;
 using System.Text;
 using System.Threading.RateLimiting;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// DbContext
 builder.Services.AddDbContext<ChatDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Identity
 builder.Services.AddIdentity<AppUser, IdentityRole<long>>(options =>
 {
     options.Password.RequireDigit = false;
@@ -33,17 +30,27 @@ builder.Services.AddIdentity<AppUser, IdentityRole<long>>(options =>
     options.Password.RequireUppercase = false;
     options.Password.RequiredLength = 8;
     options.Password.RequiredUniqueChars = 1;
-
     options.SignIn.RequireConfirmedEmail = false;
     options.SignIn.RequireConfirmedPhoneNumber = false;
 })
 .AddEntityFrameworkStores<ChatDbContext>()
 .AddDefaultTokenProviders();
 
-// JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrEmpty(jwtKey))
+{
+    throw new InvalidOperationException("JWT Key not configured in appsettings.json for JWT Bearer setup.");
+}
 var issuer = builder.Configuration["Jwt:Issuer"];
+if (string.IsNullOrEmpty(issuer))
+{
+    throw new InvalidOperationException("JWT Issuer not configured in appsettings.json for JWT Bearer setup.");
+}
 var audience = builder.Configuration["Jwt:Audience"];
+if (string.IsNullOrEmpty(audience))
+{
+    throw new InvalidOperationException("JWT Audience not configured in appsettings.json for JWT Bearer setup.");
+}
 
 builder.Services.AddAuthentication(options =>
 {
@@ -75,29 +82,24 @@ builder.Services.AddAuthentication(options =>
             {
                 context.Token = accessToken;
             }
-
             return Task.CompletedTask;
         }
     };
 });
 
-// Repositories
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-// Services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 
-// SignalR
 builder.Services.AddSignalR();
 
-// Rate Limiting
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
@@ -112,7 +114,6 @@ builder.Services.AddRateLimiter(options =>
             })
     );
 
-    // Stricter limits for auth endpoints
     options.AddPolicy("AuthLimit", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
@@ -126,32 +127,27 @@ builder.Services.AddRateLimiter(options =>
     );
 });
 
-// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
-        builder =>
+        policyBuilder =>
         {
-            builder.AllowAnyOrigin()
+            policyBuilder.AllowAnyOrigin()
                    .AllowAnyMethod()
                    .AllowAnyHeader();
         });
 });
 
-// Logging
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-
-    // فقط در محیط توسعه اجرا شود
     app.UseDeveloperExceptionPage();
 }
 else
@@ -172,7 +168,6 @@ app.MapHub<ChatHub>("/chathub");
 
 app.Use(async (context, next) =>
 {
-    // Skip for GET, HEAD, OPTIONS, TRACE
     if (!HttpMethods.IsPost(context.Request.Method) &&
         !HttpMethods.IsPut(context.Request.Method) &&
         !HttpMethods.IsPatch(context.Request.Method) &&
@@ -182,7 +177,6 @@ app.Use(async (context, next) =>
         return;
     }
 
-    // Skip for SignalR and Auth paths
     if (context.Request.Path.StartsWithSegments("/chathub") ||
         context.Request.Path.StartsWithSegments("/api/auth"))
     {
@@ -190,7 +184,6 @@ app.Use(async (context, next) =>
         return;
     }
 
-    // ادامه مسیر پردازش برای سایر درخواست‌ها
     await next(context);
 });
 

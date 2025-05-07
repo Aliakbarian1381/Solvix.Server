@@ -17,16 +17,19 @@ namespace Solvix.Server.API.Controllers
         private readonly UserManager<AppUser> _userManager;
         private readonly ITokenService _tokenService;
         private readonly IUserService _userService;
+        private readonly IUserConnectionService _connectionService;
 
         public AuthController(
             UserManager<AppUser> userManager,
             ITokenService tokenService,
             IUserService userService,
+            IUserConnectionService connectionService,
             ILogger<AuthController> logger) : base(logger)
         {
             _userManager = userManager;
             _tokenService = tokenService;
             _userService = userService;
+            _connectionService = connectionService;
         }
 
         [HttpGet("check-phone/{phoneNumber}")]
@@ -82,7 +85,7 @@ namespace Solvix.Server.API.Controllers
                     return BadRequest(string.Join(", ", errors));
                 }
 
-                var userDto = MappingHelper.MapToUserDto(user, _tokenService.CreateToken(user));
+                var userDto = MappingHelper.MapToUserDto(user, false, _tokenService.CreateToken(user));
                 return Ok(userDto, "ثبت نام با موفقیت انجام شد.");
             }
             catch (Exception ex)
@@ -109,14 +112,13 @@ namespace Solvix.Server.API.Controllers
                     return Unauthorized(new { message = "شماره تلفن یا رمز عبور نامعتبر است" });
                 }
 
-                // بروزرسانی آخرین زمان فعالیت
                 user.LastActiveAt = DateTime.UtcNow;
                 await _userManager.UpdateAsync(user);
 
-                var userDto = MappingHelper.MapToUserDto(user, _tokenService.CreateToken(user));
+                bool isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
+                var userDto = MappingHelper.MapToUserDto(user, isOnline, _tokenService.CreateToken(user));
 
                 return Ok(userDto, "ورود با موفقیت انجام شد.");
-
             }
             catch (Exception ex)
             {
@@ -139,10 +141,9 @@ namespace Solvix.Server.API.Controllers
                     return NotFound(new { message = "کاربر یافت نشد" });
                 }
 
-                // بروزرسانی آخرین زمان فعالیت
                 await _userService.UpdateUserLastActiveAsync(userId);
-
-                var userDto = MappingHelper.MapToUserDto(user);
+                bool isOnline = await _connectionService.IsUserOnlineAsync(userId);
+                var userDto = MappingHelper.MapToUserDto(user, isOnline, _tokenService.CreateToken(user));
                 return base.Ok(userDto);
             }
             catch (UnauthorizedAccessException ex)
@@ -171,9 +172,7 @@ namespace Solvix.Server.API.Controllers
                     return NotFound(new { message = "کاربر یافت نشد" });
                 }
 
-                // صدور توکن جدید
                 var token = _tokenService.CreateToken(user);
-
                 return Ok(new { token });
             }
             catch (Exception ex)

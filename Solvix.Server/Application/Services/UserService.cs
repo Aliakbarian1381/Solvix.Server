@@ -14,17 +14,20 @@ namespace Solvix.Server.Application.Services
         private readonly IUserRepository _userRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<UserService> _logger;
+        private readonly IUserConnectionService _connectionService;
 
         public UserService(
             UserManager<AppUser> userManager,
             IUserRepository userRepository,
             IUnitOfWork unitOfWork,
-            ILogger<UserService> logger)
+            ILogger<UserService> logger,
+            IUserConnectionService connectionService)
         {
             _userManager = userManager;
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _connectionService = connectionService;
         }
 
         public async Task<AppUser?> GetUserByUsernameAsync(string username)
@@ -52,11 +55,15 @@ namespace Solvix.Server.Application.Services
             try
             {
                 var users = await _userRepository.SearchUsersAsync(searchTerm, limit);
-
-                // حذف کاربر فعلی از نتایج جستجو
                 users = users.Where(u => u.Id != currentUserId).ToList();
 
-                return users.Select(user => MappingHelper.MapToUserDto(user)).ToList();
+                var userDtos = new List<UserDto>();
+                foreach (var user in users)
+                {
+                    bool isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
+                    userDtos.Add(MappingHelper.MapToUserDto(user, isOnline));
+                }
+                return userDtos;
             }
             catch (Exception ex)
             {

@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Solvix.Server.Application.DTOs;
 using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
 
@@ -29,19 +30,13 @@ namespace Solvix.Server.API.Controllers
             {
                 if (string.IsNullOrWhiteSpace(query))
                 {
-                    return Ok(new List<object>());
+                    return Ok(new List<UserDto>());
                 }
 
                 var currentUserId = GetUserId();
-                var users = await _userService.SearchUsersAsync(query, currentUserId);
+                var userDtos = await _userService.SearchUsersAsync(query, currentUserId);
 
-                // اضافه کردن وضعیت آنلاین بودن به نتایج جستجو
-                foreach (var user in users)
-                {
-                    user.IsOnline = await _connectionService.IsUserOnlineAsync(user.Id);
-                }
-
-                return Ok(users);
+                return Ok(userDtos);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -66,9 +61,8 @@ namespace Solvix.Server.API.Controllers
                 {
                     return NotFound(new { message = "کاربر یافت نشد" });
                 }
-
-                var userDto = MappingHelper.MapToUserDto(user, await _connectionService.IsUserOnlineAsync(userId));
-
+                bool isOnline = await _connectionService.IsUserOnlineAsync(userId);
+                var userDto = MappingHelper.MapToUserDto(user, isOnline);
 
                 return Ok(userDto);
             }
@@ -89,16 +83,11 @@ namespace Solvix.Server.API.Controllers
         {
             try
             {
-                var onlineUsers = await _connectionService.GetOnlineUsersAsync();
+                var onlineAppUsers = await _connectionService.GetOnlineUsersAsync();
 
-                var userDtos = onlineUsers
-                    .Select(user => MappingHelper.MapToUserDto(user))
+                var userDtos = onlineAppUsers
+                    .Select(user => MappingHelper.MapToUserDto(user, true))
                     .ToList();
-
-                foreach (var user in userDtos)
-                {
-                    user.IsOnline = true;
-                }
 
                 return Ok(userDtos);
             }

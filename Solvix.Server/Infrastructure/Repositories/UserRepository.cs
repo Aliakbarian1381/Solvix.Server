@@ -38,10 +38,10 @@ namespace Solvix.Server.Infrastructure.Repositories
 
             return await _chatDbContext.Users
                 .Where(u =>
-                    u.FirstName.Contains(trimmedTerm) ||
-                    u.LastName.Contains(trimmedTerm) ||
-                    u.PhoneNumber.Contains(trimmedTerm) ||
-                    (u.FirstName + " " + u.LastName).Contains(trimmedTerm))
+                    (u.FirstName != null && u.FirstName.Contains(trimmedTerm)) ||
+                    (u.LastName != null && u.LastName.Contains(trimmedTerm)) ||
+                    (u.PhoneNumber != null && u.PhoneNumber.Contains(trimmedTerm)) ||
+                    ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Contains(trimmedTerm))
                 .Take(limit)
                 .ToListAsync();
         }

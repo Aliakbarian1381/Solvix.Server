@@ -67,10 +67,8 @@ namespace Solvix.Server.API.Controllers
                     return NotFound(new { message = "کاربر یافت نشد" });
                 }
 
-                var userDto = MappingHelper.MapToUserDto(user);
+                var userDto = MappingHelper.MapToUserDto(user, await _connectionService.IsUserOnlineAsync(userId));
 
-                // اضافه کردن وضعیت آنلاین بودن
-                userDto.IsOnline = await _connectionService.IsUserOnlineAsync(userId);
 
                 return Ok(userDto);
             }

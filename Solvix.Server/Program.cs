@@ -125,6 +125,18 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(5)
             })
     );
+
+    options.AddPolicy("OtpRequestLimit", httpContext =>
+    RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+        factory: partition => new FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = 5,
+            QueueLimit = 0,
+            Window = TimeSpan.FromMinutes(15)
+        })
+);
 });
 
 builder.Services.AddCors(options =>

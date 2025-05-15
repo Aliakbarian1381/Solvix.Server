@@ -96,6 +96,7 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
+        [EnableRateLimiting("OtpRequestLimit")]
         [HttpPost("request-otp")]
         public async Task<IActionResult> RequestOtp(OtpRequestDto request)
         {

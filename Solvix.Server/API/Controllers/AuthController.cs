@@ -19,17 +19,24 @@ namespace Solvix.Server.API.Controllers
         private readonly ITokenService _tokenService;
         private readonly IUserService _userService;
         private readonly IUserConnectionService _connectionService;
+        private readonly IOtpService _otpService;
+        private readonly AuthenticationContext _authContext;
+
 
         public AuthController(
             UserManager<AppUser> userManager,
             ITokenService tokenService,
             IUserService userService,
             IUserConnectionService connectionService,
+            IOtpService otpService,
+            AuthenticationContext authContext,
             ILogger<AuthController> logger) : base(logger)
         {
             _userManager = userManager;
             _tokenService = tokenService;
             _userService = userService;
+            _otpService = otpService;
+            _authContext = authContext;
             _connectionService = connectionService;
         }
 
@@ -96,6 +103,7 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
+        [EnableRateLimiting("OtpRequestLimit")]
         [HttpPost("request-otp")]
         public async Task<IActionResult> RequestOtp(OtpRequestDto request)
         {

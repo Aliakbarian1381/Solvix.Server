@@ -12,7 +12,6 @@ using Solvix.Server.Infrastructure.Services;
 using System.Text;
 using System.Threading.RateLimiting;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -87,6 +86,16 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// اضافه کردن کش برای نگهداری کدهای OTP
+builder.Services.AddMemoryCache();
+
+// تنظیم HttpClient برای سرویس OTP
+builder.Services.AddHttpClient("OtpClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+// ثبت سرویس‌های مورد نیاز
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
@@ -97,6 +106,12 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
+
+// ثبت سرویس‌های جدید برای احراز هویت با OTP
+builder.Services.AddScoped<IOtpService, OtpService>();
+builder.Services.AddScoped<IAuthenticationStrategy, PasswordAuthenticationStrategy>();
+builder.Services.AddScoped<IAuthenticationStrategy, OtpAuthenticationStrategy>();
+builder.Services.AddScoped<AuthenticationContext>();
 
 builder.Services.AddSignalR();
 
@@ -123,6 +138,18 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 10,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(5)
+            })
+    );
+
+    options.AddPolicy("OtpRequestLimit", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 5,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(15)
             })
     );
 });

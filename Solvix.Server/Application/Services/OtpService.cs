@@ -66,7 +66,7 @@ namespace Solvix.Server.Application.Services
             {
                 var data = new
                 {
-                    OtpId = "1", // شناسه قالب پیامک
+                    OtpId = "1310",
                     ReplaceToken = new[] { otpCode },
                     MobileNumber = phoneNumber,
                 };

@@ -49,6 +49,9 @@ namespace Solvix.Server.API.Hubs
                 _logger.LogInformation("User {UserId} connected with connection {ConnectionId}",
                     userId.Value, Context.ConnectionId);
 
+                await Clients.Caller.SendAsync("HubConnectionRegistered");
+                _logger.LogInformation("Sent HubConnectionRegistered to client {ConnectionId}", Context.ConnectionId);
+
                 // اطلاع‌رسانی به کاربران دیگر درباره آنلاین شدن این کاربر
                 await NotifyUserStatusChanged(userId.Value, true);
             }

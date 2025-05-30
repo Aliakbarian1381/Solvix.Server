@@ -19,6 +19,7 @@ namespace Solvix.Server.Infrastructure.Repositories
             return await _chatDbContext.Chats
                 .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
+                 .Include(c => c.Messages)
                 .Where(c => c.Participants.Any(p => p.UserId == userId))
                 .ToListAsync();
         }

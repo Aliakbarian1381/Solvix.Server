@@ -54,7 +54,7 @@ namespace Solvix.Server.Data
             modelBuilder.Entity<Chat>(entity =>
             {
                 entity.HasKey(c => c.Id);
-                entity.Property(c => c.CreatedAt).HasDefaultValueSql("NOW() at time zone 'utc'");
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             });
 
             modelBuilder.Entity<ChatParticipant>(entity =>

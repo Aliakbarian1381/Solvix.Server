@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
 using System.Security.Claims;
 
@@ -111,8 +112,8 @@ namespace Solvix.Server.API.Hubs
                 var savedMessage = await _chatService.SaveMessageAsync(chatId, senderUserId.Value, messageContent);
 
                 // ارسال تأییدیه همبستگی به فرستنده
-                await Clients.Caller.SendAsync("MessageCorrelationConfirmation", correlationId, savedMessage.Id);
-
+                var messageDto = MappingHelper.MapToMessageDto(savedMessage);
+                await Clients.Caller.SendAsync("MessageCorrelationConfirmation", correlationId, messageDto);
                 // انتشار پیام به همه اعضای چت
                 await _chatService.BroadcastMessageAsync(savedMessage);
 

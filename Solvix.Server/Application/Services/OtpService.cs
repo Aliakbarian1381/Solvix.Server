@@ -15,7 +15,7 @@ namespace Solvix.Server.Application.Services
         // پیشوند کلید کش برای کدهای OTP
         private const string OTP_CACHE_KEY_PREFIX = "OTP_";
         // زمان انقضای کد OTP (5 دقیقه)
-        private readonly TimeSpan _otpExpiration = TimeSpan.FromMinutes(5);
+        private readonly TimeSpan _otpExpiration = TimeSpan.FromMinutes(2);
 
         public OtpService(ILogger<OtpService> logger, IMemoryCache cache, IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {

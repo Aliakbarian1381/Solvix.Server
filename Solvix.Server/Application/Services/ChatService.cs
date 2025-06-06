@@ -14,17 +14,20 @@ namespace Solvix.Server.Application.Services
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IUserConnectionService _userConnectionService;
         private readonly ILogger<ChatService> _logger;
+        private readonly INotificationService _notificationService;
 
         public ChatService(
             IUnitOfWork unitOfWork,
             IHubContext<ChatHub> hubContext,
             IUserConnectionService userConnectionService,
-            ILogger<ChatService> logger)
+            ILogger<ChatService> logger,
+            INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _hubContext = hubContext;
             _userConnectionService = userConnectionService;
             _logger = logger;
+            _notificationService = notificationService;
         }
 
         public async Task<List<ChatDto>> GetUserChatsAsync(long userId)
@@ -159,51 +162,56 @@ namespace Solvix.Server.Application.Services
         {
             if (message == null || message.Id <= 0)
             {
-                _logger.LogError("BroadcastMessageAsync called with invalid message or message ID.");
-                throw new ArgumentNullException(nameof(message), "Message or message ID cannot be null/invalid for broadcasting.");
+                _logger.LogError("BroadcastMessageAsync called with invalid message.");
+                return;
             }
 
             try
             {
-                var sender = await _unitOfWork.UserRepository.GetByIdAsync(message.SenderId);
-                if (sender == null)
-                {
-                    _logger.LogError("Cannot broadcast message {MessageId}. Sender user {UserId} not found.", message.Id, message.SenderId);
-                    return;
-                }
-                var senderFullName = $"{sender.FirstName} {sender.LastName}".Trim();
-
                 var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(message.ChatId);
                 if (chat == null)
                 {
-                    _logger.LogError("Cannot broadcast message {MessageId}. Chat {ChatId} not found.", message.Id, message.ChatId);
+                    _logger.LogError("Cannot broadcast. Chat {ChatId} not found.", message.ChatId);
                     return;
                 }
                 var participantIds = chat.Participants.Select(p => p.UserId).ToList();
-
                 var messageDto = MappingHelper.MapToMessageDto(message);
 
+                // ارسال پیام به همه اعضای چت
                 foreach (var participantId in participantIds)
                 {
                     var connectionIds = await _userConnectionService.GetConnectionsForUserAsync(participantId);
-                    foreach (var connectionId in connectionIds)
+
+                    // اگر کاربر آنلاین است، پیام را از طریق SignalR ارسال کن
+                    if (connectionIds.Any())
                     {
-                        if (!string.IsNullOrEmpty(connectionId))
+                        foreach (var connectionId in connectionIds)
                         {
-                            try
+                            await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", messageDto);
+                        }
+                    }
+                    // اگر کاربر آفلاین است و خودش فرستنده پیام نیست، برایش نوتیفیکیشن بفرست
+                    else if (participantId != message.SenderId)
+                    {
+                        var recipientUser = await _unitOfWork.UserRepository.GetByIdAsync(participantId);
+                        if (recipientUser != null && !string.IsNullOrEmpty(recipientUser.FcmToken))
+                        {
+                            var sender = await _unitOfWork.UserRepository.GetByIdAsync(message.SenderId);
+                            var notifTitle = $"{sender?.FirstName} {sender?.LastName}".Trim();
+                            if (string.IsNullOrWhiteSpace(notifTitle))
                             {
-                                await _hubContext.Clients.Client(connectionId).SendAsync(
-                                    "ReceiveMessage",
-                                    messageDto
-                                );
-                                _logger.LogInformation("Sent message DTO (ID {MessageId}) to User {UserId} on connection {ConnectionId}",
-                                    messageDto.Id, participantId, connectionId);
+                                notifTitle = sender?.UserName ?? "پیام جدید";
                             }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error sending message DTO (ID {MessageId}) to User {UserId} on connection {ConnectionId}",
-                                    messageDto.Id, participantId, connectionId);
-                            }
+
+                            var notifBody = message.Content;
+                            // این دیتا به کلاینت کمک می‌کنه که وقتی روی نوتیفیکیشن کلیک شد، بدونه کدوم چت رو باز کنه
+                            var notifData = new Dictionary<string, string>
+                    {
+                        { "chatId", message.ChatId.ToString() },
+                        { "type", "new_message" } // برای مدیریت انواع مختلف نوتیفیکیشن در آینده
+                    };
+
+                            await _notificationService.SendNotificationAsync(recipientUser, notifTitle, notifBody, notifData);
                         }
                     }
                 }

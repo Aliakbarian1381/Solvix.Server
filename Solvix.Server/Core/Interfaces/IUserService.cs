@@ -12,5 +12,6 @@ namespace Solvix.Server.Core.Interfaces
         Task<bool> CheckPhoneExistsAsync(string phoneNumber);
         Task<List<UserDto>> SearchUsersAsync(string searchTerm, long currentUserId, int limit = 20);
         Task<bool> UpdateUserLastActiveAsync(long userId);
+        Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken);
     }
 }

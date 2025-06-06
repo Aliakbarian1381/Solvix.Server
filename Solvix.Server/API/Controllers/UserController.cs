@@ -102,5 +102,32 @@ namespace Solvix.Server.API.Controllers
                 return ServerError("خطا در دریافت کاربران آنلاین");
             }
         }
+
+        [Authorize]
+        [HttpPost("update-fcm-token")]
+        public async Task<IActionResult> UpdateFcmToken([FromBody] FcmTokenDto tokenDto)
+        {
+            if (tokenDto == null || string.IsNullOrWhiteSpace(tokenDto.Token))
+            {
+                return BadRequest(new { message = "FCM token cannot be empty." });
+            }
+
+            try
+            {
+                var userId = GetUserId();
+                var result = await _userService.UpdateFcmTokenAsync(userId, tokenDto.Token);
+
+                if (result)
+                {
+                    return Ok(new { message = "FCM token updated successfully." });
+                }
+                return ServerError("Failed to update FCM token.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in UpdateFcmToken endpoint for user {UserId}", GetUserId());
+                return ServerError("An unexpected error occurred while updating the token.");
+            }
+        }
     }
 }

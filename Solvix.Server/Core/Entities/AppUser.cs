@@ -9,6 +9,7 @@ namespace Solvix.Server.Core.Entities
         public string? LastName { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? LastActiveAt { get; set; }
+        public string? FcmToken { get; set; }
 
 
         public virtual ICollection<Message> SentMessages { get; set; } = new HashSet<Message>();

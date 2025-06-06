@@ -72,6 +72,29 @@ namespace Solvix.Server.Application.Services
             }
         }
 
+        public async Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken)
+        {
+            try
+            {
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found for FCM token update: {UserId}", userId);
+                    return false;
+                }
+
+                user.FcmToken = fcmToken;
+                await _unitOfWork.CompleteAsync(); // ذخیره تغییرات در دیتابیس
+                _logger.LogInformation("FCM token updated for user {UserId}", userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating FCM token for user {UserId}", userId);
+                return false;
+            }
+        }
+
         public async Task<bool> UpdateUserLastActiveAsync(long userId)
         {
             try

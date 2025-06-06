@@ -105,6 +105,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 
@@ -172,6 +173,8 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 var app = builder.Build();
+
+FirebaseAdminSetup.Initialize(app);
 
 if (app.Environment.IsDevelopment())
 {

@@ -285,6 +285,60 @@ namespace Solvix.Server.Application.Services
             }
         }
 
+
+        public async Task<Message?> EditMessageAsync(int messageId, string newContent, long editorUserId)
+        {
+            var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
+            if (message == null || message.SenderId != editorUserId || message.IsDeleted)
+            {
+                return null;
+            }
+
+            message.Content = newContent;
+            message.IsEdited = true;
+            message.EditedAt = DateTime.UtcNow;
+
+            await _unitOfWork.CompleteAsync();
+            _logger.LogInformation("Message {MessageId} edited by user {UserId}", messageId, editorUserId);
+            return message;
+        }
+
+        public async Task<Message?> DeleteMessageAsync(int messageId, long deleterUserId)
+        {
+            var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
+            if (message == null || message.SenderId != deleterUserId || message.IsDeleted)
+            {
+                return null;
+            }
+
+            message.IsDeleted = true;
+            // می‌توانید محتوا را هم پاک کنید یا به یک متن استاندارد تغییر دهید
+            // message.Content = string.Empty;
+
+            await _unitOfWork.CompleteAsync();
+            _logger.LogInformation("Message {MessageId} deleted by user {UserId}", messageId, deleterUserId);
+            return message;
+        }
+
+        // این متد برای ارسال آپدیت به کلاینت‌ها استفاده می‌شود
+        public async Task BroadcastMessageUpdateAsync(Message message)
+        {
+            var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(message.ChatId);
+            if (chat == null) return;
+
+            var messageDto = MappingHelper.MapToMessageDto(message);
+            var participantIds = chat.Participants.Select(p => p.UserId).ToList();
+
+            foreach (var userId in participantIds)
+            {
+                var connectionIds = await _userConnectionService.GetConnectionsForUserAsync(userId);
+                foreach (var connectionId in connectionIds)
+                {
+                    await _hubContext.Clients.Client(connectionId).SendAsync("MessageUpdated", messageDto);
+                }
+            }
+        }
+
         public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds, long readerUserId)
         {
             if (messageIds == null || !messageIds.Any()) return;

@@ -11,6 +11,9 @@
         public DateTime SentAt { get; set; } = DateTime.UtcNow;
         public DateTime? ReadAt { get; set; }
         public bool IsRead { get; set; } = false;
+        public bool IsEdited { get; set; } = false;
+        public DateTime? EditedAt { get; set; }
+        public bool IsDeleted { get; set; } = false;
 
     }
 }

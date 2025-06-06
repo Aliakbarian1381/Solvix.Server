@@ -48,8 +48,9 @@ namespace Solvix.Server.Application.Helpers
                 ChatId = message.ChatId,
                 IsRead = message.IsRead,
                 ReadAt = message.ReadAt,
-                IsEdited = false,
-                EditedAt = null
+                IsEdited = message.IsEdited,
+                EditedAt = message.EditedAt,
+                IsDeleted = message.IsDeleted
             };
         }
 

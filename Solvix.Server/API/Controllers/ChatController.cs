@@ -162,6 +162,60 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
+        [HttpPut("messages/{messageId}")]
+        public async Task<IActionResult> EditMessage(int messageId, [FromBody] string newContent)
+        {
+            if (string.IsNullOrWhiteSpace(newContent))
+            {
+                return BadRequest("محتوای جدید نمی‌تواند خالی باشد.");
+            }
+            try
+            {
+                long userId = GetUserId();
+                var editedMessage = await _chatService.EditMessageAsync(messageId, newContent, userId);
+
+                if (editedMessage == null)
+                {
+                    return Forbidden("شما اجازه ویرایش این پیام را ندارید یا پیام وجود ندارد.");
+                }
+
+                // اطلاع‌رسانی به سایر کاربران از طریق SignalR
+                await _chatService.BroadcastMessageUpdateAsync(editedMessage);
+
+                return Ok(MappingHelper.MapToMessageDto(editedMessage));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error editing message {MessageId}", messageId);
+                return ServerError("خطا در ویرایش پیام.");
+            }
+        }
+
+        [HttpDelete("messages/{messageId}")]
+        public async Task<IActionResult> DeleteMessage(int messageId)
+        {
+            try
+            {
+                long userId = GetUserId();
+                var deletedMessage = await _chatService.DeleteMessageAsync(messageId, userId);
+
+                if (deletedMessage == null)
+                {
+                    return Forbidden("شما اجازه حذف این پیام را ندارید یا پیام وجود ندارد.");
+                }
+
+                // اطلاع‌رسانی به سایر کاربران از طریق SignalR
+                await _chatService.BroadcastMessageUpdateAsync(deletedMessage);
+
+                return Ok(new { message = "پیام با موفقیت حذف شد." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting message {MessageId}", messageId);
+                return ServerError("خطا در حذف پیام.");
+            }
+        }
+
         [HttpPost("{chatId}/mark-read")]
         public async Task<IActionResult> MarkMessagesAsRead(Guid chatId, [FromBody] List<int> messageIds)
         {

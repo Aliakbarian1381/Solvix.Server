@@ -14,5 +14,8 @@ namespace Solvix.Server.Core.Interfaces
         Task MarkMessageAsReadAsync(int messageId, long readerUserId);
         Task MarkMultipleMessagesAsReadAsync(List<int> messageIds, long readerUserId);
         Task<bool> IsUserParticipantAsync(Guid chatId, long userId);
+        Task<Message?> EditMessageAsync(int messageId, string newContent, long editorUserId);
+        Task<Message?> DeleteMessageAsync(int messageId, long deleterUserId);
+        Task BroadcastMessageUpdateAsync(Message message);
     }
 }

@@ -10,5 +10,7 @@ namespace Solvix.Server.Core.Interfaces
         Task<bool> IsUserParticipantAsync(Guid chatId, long userId);
         Task AddParticipantAsync(Guid chatId, long userId);
         Task RemoveParticipantAsync(Guid chatId, long userId);
+        Task<List<Chat>> SearchUserChatsAsync(long userId, string searchTerm);
+
     }
 }

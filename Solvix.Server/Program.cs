@@ -106,6 +106,8 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
+builder.Services.AddScoped<ISearchService, SearchService>();
+
 
 // ثبت سرویس‌های جدید برای احراز هویت با OTP
 builder.Services.AddScoped<IOtpService, OtpService>();

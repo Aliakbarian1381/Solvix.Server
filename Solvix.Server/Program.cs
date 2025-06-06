@@ -102,10 +102,12 @@ builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddTransient<IUserService, UserService>();
+builder.Services.AddTransient<IChatService, ChatService>();
+builder.Services.AddTransient<IUserConnectionService, UserConnectionService>();
+builder.Services.AddTransient<INotificationService, NotificationService>();
+
+
 builder.Services.AddSingleton<ITokenService, TokenService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 

@@ -17,7 +17,7 @@ namespace Solvix.Server.Infrastructure.Services
             _logger = logger;
         }
 
-        public async Task SendNotificationAsync(AppUser user, string title, string body, Dictionary<string, string> data)
+        public async Task SendNotificationAsync(AppUser user, Notification notification, Dictionary<string, string> data)
         {
             if (user == null || string.IsNullOrEmpty(user.FcmToken))
             {
@@ -28,17 +28,13 @@ namespace Solvix.Server.Infrastructure.Services
             var message = new FirebaseAdmin.Messaging.Message()
             {
                 Token = user.FcmToken,
-                Notification = new Notification
-                {
-                    Title = title,
-                    Body = body,
-                },
+                Notification = notification,
                 Data = data,
                 Apns = new ApnsConfig
                 {
                     Aps = new Aps
                     {
-                        Sound = "default" // برای پخش صدای پیش‌فرض نوتیفیکیشن در iOS
+                        Sound = "default"
                     }
                 }
             };
@@ -51,7 +47,6 @@ namespace Solvix.Server.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending FCM message to user {UserId}", user.Id);
-                // اینجا می‌تونی منطقی برای حذف توکن‌های نامعتبر هم اضافه کنی
             }
         }
     }

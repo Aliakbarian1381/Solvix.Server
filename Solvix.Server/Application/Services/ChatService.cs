@@ -5,6 +5,9 @@ using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
 using Solvix.Server.API.Hubs;
 using Microsoft.VisualBasic;
+using FirebaseAdmin.Messaging;
+using SolvixMessage = Solvix.Server.Core.Entities.Message;
+
 
 namespace Solvix.Server.Application.Services
 {
@@ -30,6 +33,7 @@ namespace Solvix.Server.Application.Services
             _notificationService = notificationService;
         }
 
+        // ... متدهای GetUserChatsAsync و GetChatByIdAsync و StartChatWithUserAsync بدون تغییر ...
         public async Task<List<ChatDto>> GetUserChatsAsync(long userId)
         {
             try
@@ -122,7 +126,7 @@ namespace Solvix.Server.Application.Services
             }
         }
 
-        public async Task<Message> SaveMessageAsync(Guid chatId, long senderId, string content)
+        public async Task<SolvixMessage> SaveMessageAsync(Guid chatId, long senderId, string content)
         {
             if (string.IsNullOrWhiteSpace(content)) throw new ArgumentException("Message content cannot be empty.");
 
@@ -133,7 +137,7 @@ namespace Solvix.Server.Application.Services
                 throw new UnauthorizedAccessException("User is not a participant of this chat.");
             }
 
-            var newMessage = new Message
+            var newMessage = new SolvixMessage
             {
                 ChatId = chatId,
                 SenderId = senderId,
@@ -158,7 +162,7 @@ namespace Solvix.Server.Application.Services
             }
         }
 
-        public async Task BroadcastMessageAsync(Message message)
+        public async Task BroadcastMessageAsync(SolvixMessage message)
         {
             if (message == null || message.Id <= 0)
             {
@@ -186,13 +190,10 @@ namespace Solvix.Server.Application.Services
                 var messageDto = MappingHelper.MapToMessageDto(message);
                 var participantIds = chat.Participants.Select(p => p.UserId).ToList();
 
-
-                // ارسال پیام به همه اعضای چت
                 foreach (var participantId in participantIds)
                 {
                     var connectionIds = await _userConnectionService.GetConnectionsForUserAsync(participantId);
 
-                    // اگر کاربر آنلاین است، پیام را از طریق SignalR ارسال کن
                     if (connectionIds.Any())
                     {
                         foreach (var connectionId in connectionIds)
@@ -200,7 +201,6 @@ namespace Solvix.Server.Application.Services
                             await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", messageDto);
                         }
                     }
-                    // اگر کاربر آفلاین است و خودش فرستنده پیام نیست، برایش نوتیفیکیشن بفرست
                     else if (participantId != message.SenderId)
                     {
                         var recipientUser = await _unitOfWork.UserRepository.GetByIdAsync(participantId);
@@ -208,22 +208,34 @@ namespace Solvix.Server.Application.Services
                         {
                             _logger.LogInformation("FCM token found for user {UserId}. Preparing to send notification.", recipientUser.Id);
 
-                            var sender = await _unitOfWork.UserRepository.GetByIdAsync(message.SenderId);
+                            var sender = message.Sender;
                             var notifTitle = $"{sender?.FirstName} {sender?.LastName}".Trim();
                             if (string.IsNullOrWhiteSpace(notifTitle))
                             {
                                 notifTitle = sender?.UserName ?? "پیام جدید";
                             }
 
-                            var notifBody = message.Content;
-                            // این دیتا به کلاینت کمک می‌کنه که وقتی روی نوتیفیکیشن کلیک شد، بدونه کدوم چت رو باز کنه
-                            var notifData = new Dictionary<string, string>
-                    {
-                        { "chatId", message.ChatId.ToString() },
-                        { "type", "new_message" } // برای مدیریت انواع مختلف نوتیفیکیشن در آینده
-                    };
+                            var notificationPayload = new Notification
+                            {
+                                Title = notifTitle,
+                                Body = message.Content
+                            };
 
-                            await _notificationService.SendNotificationAsync(recipientUser, notifTitle, notifBody, notifData);
+                            if (!string.IsNullOrEmpty(sender?.ProfilePictureUrl))
+                            {
+                                notificationPayload.ImageUrl = sender.ProfilePictureUrl;
+                            }
+
+                            var notifData = new Dictionary<string, string>
+                            {
+                                { "chatId", message.ChatId.ToString() },
+                                { "type", "new_message" },
+                                { "senderId", sender.Id.ToString() },
+                                { "senderName", notifTitle },
+                                { "profilePictureUrl", sender?.ProfilePictureUrl ?? "" }
+                            };
+
+                            await _notificationService.SendNotificationAsync(recipientUser, notificationPayload, notifData);
                         }
                         else
                         {
@@ -266,27 +278,23 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                // Get the message and ensure the reader is a participant and not the sender
                 var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
                 if (message == null || message.SenderId == readerUserId)
                 {
                     _logger.LogWarning("MarkMessageAsReadAsync: Message {MessageId} not found or sender is the reader {UserId}.", messageId, readerUserId);
-                    return; // Ignore if message not found or sender tries to mark own message read
+                    return;
                 }
 
                 if (!await IsUserParticipantAsync(message.ChatId, readerUserId))
                 {
                     _logger.LogWarning("MarkMessageAsReadAsync: User {UserId} is not a participant of chat {ChatId}.", readerUserId, message.ChatId);
-                    return; // Ignore if user is not in the chat
+                    return;
                 }
 
-                // Mark the message as read in the repository
-                await _unitOfWork.MessageRepository.MarkAsReadAsync(messageId, readerUserId); // Pass readerUserId for validation inside repo if needed
+                await _unitOfWork.MessageRepository.MarkAsReadAsync(messageId, readerUserId);
                 await _unitOfWork.CompleteAsync();
                 _logger.LogInformation("Message {MessageId} marked as read by user {UserId}.", messageId, readerUserId);
 
-
-                // Notify the *sender* that the message was read
                 var senderConnections = await _userConnectionService.GetConnectionsForUserAsync(message.SenderId);
                 foreach (var connectionId in senderConnections)
                 {
@@ -296,7 +304,7 @@ namespace Solvix.Server.Application.Services
                             "MessageStatusChanged",
                             message.ChatId,
                             messageId,
-                            Constants.MessageStatus.Read // Send the correct status code
+                            Constants.MessageStatus.Read
                         );
                         _logger.LogDebug("Sent MessageRead notification for MessageId {MessageId} to Sender {SenderId} on connection {ConnectionId}", messageId, message.SenderId, connectionId);
                     }
@@ -305,12 +313,10 @@ namespace Solvix.Server.Application.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error marking message {MessageId} as read by user {UserId}", messageId, readerUserId);
-                // Consider how to handle this error (e.g., retry logic, specific exception types)
             }
         }
 
-
-        public async Task<Message?> EditMessageAsync(int messageId, string newContent, long editorUserId)
+        public async Task<SolvixMessage?> EditMessageAsync(int messageId, string newContent, long editorUserId)
         {
             var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
             if (message == null || message.SenderId != editorUserId || message.IsDeleted)
@@ -327,7 +333,7 @@ namespace Solvix.Server.Application.Services
             return message;
         }
 
-        public async Task<Message?> DeleteMessageAsync(int messageId, long deleterUserId)
+        public async Task<SolvixMessage?> DeleteMessageAsync(int messageId, long deleterUserId)
         {
             var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
             if (message == null || message.SenderId != deleterUserId || message.IsDeleted)
@@ -336,16 +342,13 @@ namespace Solvix.Server.Application.Services
             }
 
             message.IsDeleted = true;
-            // می‌توانید محتوا را هم پاک کنید یا به یک متن استاندارد تغییر دهید
-            // message.Content = string.Empty;
 
             await _unitOfWork.CompleteAsync();
             _logger.LogInformation("Message {MessageId} deleted by user {UserId}", messageId, deleterUserId);
             return message;
         }
 
-        // این متد برای ارسال آپدیت به کلاینت‌ها استفاده می‌شود
-        public async Task BroadcastMessageUpdateAsync(Message message)
+        public async Task BroadcastMessageUpdateAsync(SolvixMessage message)
         {
             var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(message.ChatId);
             if (chat == null) return;
@@ -369,13 +372,11 @@ namespace Solvix.Server.Application.Services
 
             try
             {
-                // Fetch messages to get sender IDs and ChatId (assume all IDs are for the same chat for simplicity here)
-                // Optimize: Fetch only necessary info if performance is critical
                 var messages = await _unitOfWork.MessageRepository.ListAsync(m => messageIds.Contains(m.Id));
                 if (!messages.Any()) return;
 
                 var validMessageIds = messages
-                    .Where(m => m.SenderId != readerUserId && !m.IsRead) // Filter out own messages and already read ones
+                    .Where(m => m.SenderId != readerUserId && !m.IsRead)
                     .Select(m => m.Id)
                     .ToList();
 
@@ -385,7 +386,6 @@ namespace Solvix.Server.Application.Services
                     return;
                 }
 
-                // Assume all messages are from the same chat - validate if necessary
                 var chatId = messages.First().ChatId;
                 if (!await IsUserParticipantAsync(chatId, readerUserId))
                 {
@@ -393,15 +393,12 @@ namespace Solvix.Server.Application.Services
                     return;
                 }
 
-                // Mark messages as read in the repository
                 await _unitOfWork.MessageRepository.MarkMultipleAsReadAsync(validMessageIds, readerUserId);
                 await _unitOfWork.CompleteAsync();
                 _logger.LogInformation("Marked {Count} messages as read by user {UserId} in chat {ChatId}.", validMessageIds.Count, readerUserId, chatId);
 
-
-                // Notify relevant senders
                 var senderGroups = messages
-                    .Where(m => validMessageIds.Contains(m.Id)) // Only consider messages that were actually marked read
+                    .Where(m => validMessageIds.Contains(m.Id))
                     .GroupBy(m => m.SenderId);
 
                 foreach (var group in senderGroups)
@@ -414,7 +411,6 @@ namespace Solvix.Server.Application.Services
                     {
                         if (!string.IsNullOrEmpty(connectionId))
                         {
-                            // Send status update for each message individually
                             foreach (var messageId in readMessageIdsInGroup)
                             {
                                 await _hubContext.Clients.Client(connectionId).SendAsync(

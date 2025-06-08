@@ -206,6 +206,8 @@ namespace Solvix.Server.Application.Services
                         var recipientUser = await _unitOfWork.UserRepository.GetByIdAsync(participantId);
                         if (recipientUser != null && !string.IsNullOrEmpty(recipientUser.FcmToken))
                         {
+                            _logger.LogInformation("FCM token found for user {UserId}. Preparing to send notification.", recipientUser.Id);
+
                             var sender = await _unitOfWork.UserRepository.GetByIdAsync(message.SenderId);
                             var notifTitle = $"{sender?.FirstName} {sender?.LastName}".Trim();
                             if (string.IsNullOrWhiteSpace(notifTitle))
@@ -222,6 +224,10 @@ namespace Solvix.Server.Application.Services
                     };
 
                             await _notificationService.SendNotificationAsync(recipientUser, notifTitle, notifBody, notifData);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("FCM token NOT found for offline user {UserId}. Skipping notification.", participantId);
                         }
                     }
                 }

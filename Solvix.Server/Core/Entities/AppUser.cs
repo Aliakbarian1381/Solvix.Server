@@ -13,7 +13,6 @@ namespace Solvix.Server.Core.Entities
 
 
         public virtual ICollection<Message> SentMessages { get; set; } = new HashSet<Message>();
-        public virtual ICollection<Message> ReceivedMessages { get; set; } = new HashSet<Message>();
         public virtual ICollection<UserConnection> Connections { get; set; } = new HashSet<UserConnection>();
 
     }

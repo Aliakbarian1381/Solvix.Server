@@ -31,7 +31,7 @@ namespace Solvix.Server.Data
                 entity.HasKey(m => m.Id);
 
                 entity.HasOne(m => m.Sender)
-                      .WithMany()
+                      .WithMany(u => u.SentMessages)
                       .HasForeignKey(m => m.SenderId)
                       .OnDelete(DeleteBehavior.Restrict);
 

@@ -168,14 +168,24 @@ namespace Solvix.Server.Application.Services
 
             try
             {
+                if (message.Sender == null)
+                {
+                    message.Sender = await _unitOfWork.UserRepository.GetByIdAsync(message.SenderId);
+                    if (message.Sender == null)
+                    {
+                        _logger.LogError("Cannot broadcast. Sender with ID {SenderId} not found.", message.SenderId);
+                        return;
+                    }
+                }
                 var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(message.ChatId);
                 if (chat == null)
                 {
                     _logger.LogError("Cannot broadcast. Chat {ChatId} not found.", message.ChatId);
                     return;
                 }
-                var participantIds = chat.Participants.Select(p => p.UserId).ToList();
                 var messageDto = MappingHelper.MapToMessageDto(message);
+                var participantIds = chat.Participants.Select(p => p.UserId).ToList();
+
 
                 // ارسال پیام به همه اعضای چت
                 foreach (var participantId in participantIds)

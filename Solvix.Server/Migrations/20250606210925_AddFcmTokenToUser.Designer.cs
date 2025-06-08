@@ -12,7 +12,7 @@ using Solvix.Server.Data;
 namespace Solvix.Server.Migrations
 {
     [DbContext(typeof(ChatDbContext))]
-    [Migration("20250606150336_AddFcmTokenToUser")]
+    [Migration("20250606210925_AddFcmTokenToUser")]
     partial class AddFcmTokenToUser
     {
         /// <inheritdoc />
@@ -182,6 +182,9 @@ namespace Solvix.Server.Migrations
 
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("bit");
+
+                    b.Property<string>("FcmToken")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("FirstName")
                         .HasColumnType("nvarchar(max)");

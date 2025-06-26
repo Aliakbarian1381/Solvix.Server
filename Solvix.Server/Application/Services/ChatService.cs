@@ -33,7 +33,6 @@ namespace Solvix.Server.Application.Services
             _notificationService = notificationService;
         }
 
-        // ... متدهای GetUserChatsAsync و GetChatByIdAsync و StartChatWithUserAsync بدون تغییر ...
         public async Task<List<ChatDto>> GetUserChatsAsync(long userId)
         {
             try
@@ -429,6 +428,47 @@ namespace Solvix.Server.Application.Services
             {
                 _logger.LogError(ex, "Error marking multiple messages as read by user {UserId}", readerUserId);
             }
+        }
+
+
+        public async Task<ChatDto> CreateGroupChatAsync(long creatorId, string title, List<long> participantIds)
+        {
+            if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException("Group title cannot be empty.");
+            if (participantIds == null || !participantIds.Any()) throw new ArgumentException("Group must have participants.");
+
+            // افزودن سازنده گروه به لیست اعضا اگر وجود نداشت
+            if (!participantIds.Contains(creatorId))
+            {
+                participantIds.Add(creatorId);
+            }
+
+            var chat = new Chat
+            {
+                IsGroup = true,
+                Title = title,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.ChatRepository.AddAsync(chat);
+
+            foreach (var userId in participantIds)
+            {
+                await _unitOfWork.ChatRepository.AddParticipantAsync(chat.Id, userId);
+            }
+
+            await _unitOfWork.CompleteAsync();
+
+            _logger.LogInformation("New group chat created by {CreatorId} with title '{Title}'. ChatId: {ChatId}", creatorId, title, chat.Id);
+
+            // واکشی اطلاعات کامل برای DTO
+            var createdChat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(chat.Id);
+            var onlineStatuses = new Dictionary<long, bool>();
+            foreach (var p in createdChat.Participants)
+            {
+                onlineStatuses[p.UserId] = await _userConnectionService.IsUserOnlineAsync(p.UserId);
+            }
+
+            return MappingHelper.MapToChatDto(createdChat, creatorId, onlineStatuses);
         }
 
         public async Task<bool> IsUserParticipantAsync(Guid chatId, long userId)

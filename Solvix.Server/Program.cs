@@ -118,8 +118,10 @@ builder.Services.AddScoped<IAuthenticationStrategy, PasswordAuthenticationStrate
 builder.Services.AddScoped<IAuthenticationStrategy, OtpAuthenticationStrategy>();
 builder.Services.AddScoped<AuthenticationContext>();
 
-builder.Services.AddSignalR();
-
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = 102400;
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>

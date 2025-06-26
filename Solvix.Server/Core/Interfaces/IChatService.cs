@@ -17,5 +17,7 @@ namespace Solvix.Server.Core.Interfaces
         Task<Message?> EditMessageAsync(int messageId, string newContent, long editorUserId);
         Task<Message?> DeleteMessageAsync(int messageId, long deleterUserId);
         Task BroadcastMessageUpdateAsync(Message message);
+        Task<ChatDto> CreateGroupChatAsync(long creatorId, string title, List<long> participantIds);
+
     }
 }

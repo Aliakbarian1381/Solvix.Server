@@ -21,7 +21,7 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ThenInclude(p => p.User)
                  .Include(c => c.Messages)
                 .Where(c => c.Participants.Any(p => p.UserId == userId))
-                .OrderByDescending(c => c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : c.CreatedAt)
+                .OrderByDescending(c => c.Messages.Any(m => !m.IsDeleted) ? c.Messages.Where(m => !m.IsDeleted).Max(m => m.SentAt) : c.CreatedAt)
                 .ToListAsync();
         }
 

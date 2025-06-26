@@ -8,5 +8,7 @@ namespace Solvix.Server.Core.Interfaces
         Task<AppUser?> GetByPhoneNumberAsync(string phoneNumber);
         Task<bool> PhoneNumberExistsAsync(string phoneNumber);
         Task<List<AppUser>> SearchUsersAsync(string searchTerm, int limit = 20);
+        Task<IEnumerable<AppUser>> FindUsersByPhoneNumbersAsync(IEnumerable<string> phoneNumbers);
+
     }
 }

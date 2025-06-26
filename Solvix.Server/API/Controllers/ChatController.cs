@@ -44,6 +44,27 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
+
+        [HttpPost("create-group")]
+        public async Task<IActionResult> CreateGroupChat([FromBody] CreateGroupDto dto)
+        {
+            try
+            {
+                long userId = GetUserId();
+                var chatDto = await _chatService.CreateGroupChatAsync(userId, dto.Title, dto.ParticipantIds);
+                return Ok(chatDto);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating group chat by user {UserId}", GetUserId());
+                return ServerError("خطا در ساخت گروه");
+            }
+        }
+
         [HttpGet("{chatId}")]
         public async Task<IActionResult> GetChat(Guid chatId)
         {

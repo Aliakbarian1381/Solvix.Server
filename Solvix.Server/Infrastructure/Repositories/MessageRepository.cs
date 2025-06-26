@@ -18,7 +18,7 @@ namespace Solvix.Server.Infrastructure.Repositories
         {
             return await _chatDbContext.Messages
                 .Include(m => m.Sender) 
-                .Where(m => m.ChatId == chatId)
+                .Where(m => m.ChatId == chatId && !m.IsDeleted)
                 .OrderByDescending(m => m.SentAt) 
                 .Skip(skip)
                 .Take(take)

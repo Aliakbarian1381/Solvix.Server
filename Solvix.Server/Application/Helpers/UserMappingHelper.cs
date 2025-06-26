@@ -72,7 +72,7 @@ namespace Solvix.Server.Application.Helpers
                 }
             }
 
-            var lastMessage = chat.Messages?.OrderByDescending(m => m.SentAt).FirstOrDefault();
+            var lastMessage = chat.Messages?.Where(m => !m.IsDeleted).OrderByDescending(m => m.SentAt).FirstOrDefault();
             var unreadCount = chat.Messages?.Count(m => m.SenderId != currentUserId && !m.IsRead) ?? 0;
 
             return new ChatDto

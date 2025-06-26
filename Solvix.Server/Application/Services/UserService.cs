@@ -3,6 +3,7 @@ using Solvix.Server.Application.DTOs;
 using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Infrastructure.Services;
 
 
 
@@ -70,6 +71,21 @@ namespace Solvix.Server.Application.Services
                 _logger.LogError(ex, "Error searching users with term: {SearchTerm}", searchTerm);
                 return new List<UserDto>();
             }
+        }
+
+        public async Task<IEnumerable<UserDto>> FindUsersByPhoneNumbersAsync(IEnumerable<string> phoneNumbers, long currentUserId)
+        {
+            var usersFromRepo = await _unitOfWork.UserRepository.FindUsersByPhoneNumbersAsync(phoneNumbers);
+
+            var filteredUsers = usersFromRepo.Where(u => u.Id != currentUserId);
+
+            var userDtos = new List<UserDto>();
+            foreach (var user in filteredUsers)
+            {
+                var isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
+                userDtos.Add(MappingHelper.MapToUserDto(user, isOnline));
+            }
+            return userDtos;
         }
 
         public async Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken)

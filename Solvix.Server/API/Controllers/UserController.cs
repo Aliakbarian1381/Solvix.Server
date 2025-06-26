@@ -4,11 +4,13 @@ using Microsoft.Extensions.Logging;
 using Solvix.Server.Application.DTOs;
 using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
+using System.Security.Claims;
 
 namespace Solvix.Server.API.Controllers
 {
     [Authorize]
     [Route("api/[controller]")]
+    [ApiController]
     public class UserController : BaseController
     {
         private readonly IUserService _userService;
@@ -47,6 +49,33 @@ namespace Solvix.Server.API.Controllers
             {
                 _logger.LogError(ex, "Error searching users with query: {Query}", query);
                 return ServerError("خطا در جستجوی کاربران");
+            }
+        }
+
+
+        [HttpPost("sync-contacts")]
+        public async Task<IActionResult> SyncContacts([FromBody] List<string> phoneNumbers)
+        {
+            try
+            {
+                var currentUserIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(currentUserIdStr))
+                {
+                    return Unauthorized("User ID not found in token.");
+                }
+
+                if (!long.TryParse(currentUserIdStr, out var currentUserId))
+                {
+                    return BadRequest("Invalid user ID format.");
+                }
+
+                var users = await _userService.FindUsersByPhoneNumbersAsync(phoneNumbers, currentUserId);
+                return Ok(users);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing contacts for user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                return ServerError("خطا در همگام‌سازی مخاطبین");
             }
         }
 

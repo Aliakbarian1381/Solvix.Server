@@ -13,5 +13,7 @@ namespace Solvix.Server.Core.Interfaces
         Task<List<UserDto>> SearchUsersAsync(string searchTerm, long currentUserId, int limit = 20);
         Task<bool> UpdateUserLastActiveAsync(long userId);
         Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken);
+        Task<IEnumerable<UserDto>> FindUsersByPhoneNumbersAsync(IEnumerable<string> phoneNumbers, long currentUserId);
+
     }
 }

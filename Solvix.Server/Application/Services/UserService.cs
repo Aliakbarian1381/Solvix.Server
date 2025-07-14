@@ -9,8 +9,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text;
 
-
-
 namespace Solvix.Server.Application.Services
 {
     public class UserService : IUserService
@@ -63,27 +61,17 @@ namespace Solvix.Server.Application.Services
                 users = users.Where(u => u.Id != currentUserId).ToList();
 
                 var userDtos = new List<UserDto>();
-                foreach (var contact in orderedContacts)
+                foreach (var user in users)
                 {
-                    var isOnline = await _connectionService.IsUserOnlineAsync(contact.ContactUser.Id);
-                    var userDto = MappingHelper.MapToUserDto(contact.ContactUser, isOnline);
-
-                    // اضافه کردن اطلاعات رابطه
-                    userDto.IsFavorite = contact.IsFavorite;
-                    userDto.IsBlocked = contact.IsBlocked;
-                    userDto.DisplayName = contact.DisplayName;
-                    userDto.ContactCreatedAt = contact.CreatedAt;
-                    userDto.LastInteractionAt = contact.LastInteractionAt;
-                    userDto.IsContact = true;
-
-                    userDtos.Add(userDto);
+                    bool isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
+                    userDtos.Add(MappingHelper.MapToUserDto(user, isOnline));
                 }
                 return userDtos;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting favorite contacts for user {UserId}", userId);
-                throw new Exception("خطا در دریافت مخاطبین مورد علاقه");
+                _logger.LogError(ex, "Error searching users with term: {SearchTerm}", searchTerm);
+                return new List<UserDto>();
             }
         }
 
@@ -97,7 +85,6 @@ namespace Solvix.Server.Application.Services
                     return new List<UserDto>();
                 }
 
-                // پیدا کردن کاربران بر اساس شماره تلفن
                 var usersFromRepo = await _unitOfWork.UserRepository.FindUsersByPhoneNumbersAsync(phoneNumbers);
                 var filteredUsers = usersFromRepo.Where(u => u.Id != currentUserId).ToList();
 
@@ -107,17 +94,14 @@ namespace Solvix.Server.Application.Services
                     return new List<UserDto>();
                 }
 
-                // دریافت روابط موجود
                 var existingContactRelations = await _unitOfWork.UserContactRepository
                     .ListAsync(uc => uc.OwnerUserId == currentUserId &&
                                    filteredUsers.Select(u => u.Id).Contains(uc.ContactUserId));
 
                 var existingContactIds = existingContactRelations.Select(uc => uc.ContactUserId).ToHashSet();
 
-                // پیدا کردن کاربران جدید که هنوز به مخاطبین اضافه نشده‌اند
                 var newContacts = filteredUsers.Where(u => !existingContactIds.Contains(u.Id)).ToList();
 
-                // اضافه کردن روابط جدید
                 if (newContacts.Any())
                 {
                     var contactsToAdd = newContacts.Select(user => new UserContact
@@ -127,7 +111,7 @@ namespace Solvix.Server.Application.Services
                         CreatedAt = DateTime.UtcNow,
                         IsFavorite = false,
                         IsBlocked = false,
-                        DisplayName = null // کاربر بعداً می‌تواند تغییر دهد
+                        DisplayName = null
                     }).ToList();
 
                     await _unitOfWork.UserContactRepository.AddRangeAsync(contactsToAdd);
@@ -137,14 +121,12 @@ namespace Solvix.Server.Application.Services
                         newContacts.Count, currentUserId);
                 }
 
-                // تولید DTOها برای همه کاربران (هم موجود هم جدید)
                 var userDtos = new List<UserDto>();
                 foreach (var user in filteredUsers)
                 {
                     var isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
                     var userDto = MappingHelper.MapToUserDto(user, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه اگر موجود باشد
                     var contactRelation = existingContactRelations.FirstOrDefault(er => er.ContactUserId == user.Id);
                     if (contactRelation != null)
                     {
@@ -156,7 +138,6 @@ namespace Solvix.Server.Application.Services
                     }
                     else
                     {
-                        // کاربر جدید اضافه شده
                         userDto.IsFavorite = false;
                         userDto.IsBlocked = false;
                         userDto.ContactCreatedAt = DateTime.UtcNow;
@@ -182,14 +163,18 @@ namespace Solvix.Server.Application.Services
                     .ListAsync(uc => uc.OwnerUserId == ownerUserId && !uc.IsBlocked,
                                includeProperties: "ContactUser");
 
+                var orderedContacts = savedContactRelations
+                    .OrderByDescending(uc => uc.IsFavorite)
+                    .ThenBy(uc => uc.DisplayName ?? uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
+                    .ToList();
+
                 var userDtos = new List<UserDto>();
-                foreach (var relation in savedContactRelations)
+                foreach (var relation in orderedContacts)
                 {
                     var user = relation.ContactUser;
                     var isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
                     var userDto = MappingHelper.MapToUserDto(user, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه
                     userDto.IsFavorite = relation.IsFavorite;
                     userDto.IsBlocked = relation.IsBlocked;
                     userDto.DisplayName = relation.DisplayName;
@@ -200,11 +185,7 @@ namespace Solvix.Server.Application.Services
                     userDtos.Add(userDto);
                 }
 
-                // مرتب‌سازی: علاقه‌مندی‌ها اول، سپس بر اساس نام
-                return userDtos
-                    .OrderByDescending(u => u.IsFavorite)
-                    .ThenBy(u => u.DisplayName ?? u.FirstName ?? u.UserName)
-                    .ToList();
+                return userDtos;
             }
             catch (Exception ex)
             {
@@ -217,7 +198,6 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                // دریافت مخاطبین
                 var contacts = await _unitOfWork.UserContactRepository.ListAsync(
                     uc => uc.OwnerUserId == ownerUserId && !uc.IsBlocked,
                     includeProperties: "ContactUser");
@@ -229,7 +209,6 @@ namespace Solvix.Server.Application.Services
 
                 var contactUserIds = contacts.Select(c => c.ContactUserId).ToList();
 
-                // دریافت چت‌های خصوصی
                 var chats = await _unitOfWork.ChatRepository.ListAsync(
                     c => !c.IsGroup &&
                          c.Participants.Any(p => p.UserId == ownerUserId) &&
@@ -246,7 +225,6 @@ namespace Solvix.Server.Application.Services
                     }
                 }
 
-                // تولید DTOها
                 var userDtos = new List<UserDto>();
                 foreach (var contact in contacts)
                 {
@@ -254,7 +232,6 @@ namespace Solvix.Server.Application.Services
                     var isOnline = await _connectionService.IsUserOnlineAsync(user.Id);
                     var userDto = MappingHelper.MapToUserDto(user, isOnline);
 
-                    // اطلاعات رابطه
                     userDto.IsFavorite = contact.IsFavorite;
                     userDto.IsBlocked = contact.IsBlocked;
                     userDto.DisplayName = contact.DisplayName;
@@ -262,7 +239,6 @@ namespace Solvix.Server.Application.Services
                     userDto.LastInteractionAt = contact.LastInteractionAt;
                     userDto.IsContact = true;
 
-                    // اطلاعات چت
                     if (chatsByUserId.TryGetValue(user.Id, out var chat))
                     {
                         userDto.HasChat = true;
@@ -279,7 +255,6 @@ namespace Solvix.Server.Application.Services
                     userDtos.Add(userDto);
                 }
 
-                // مرتب‌سازی: علاقه‌مندی‌ها اول، سپس آخرین پیام، سپس نام
                 return userDtos
                     .OrderByDescending(u => u.IsFavorite)
                     .ThenByDescending(u => u.LastMessageTime ?? u.ContactCreatedAt)
@@ -289,10 +264,9 @@ namespace Solvix.Server.Application.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting saved contacts with chat info for user {UserId}", ownerUserId);
-                return await GetSavedContactsAsync(ownerUserId); // fallback
+                return await GetSavedContactsAsync(ownerUserId);
             }
         }
-
 
         public async Task<bool> MarkContactAsFavoriteAsync(long ownerId, long contactId, bool isFavorite)
         {
@@ -387,49 +361,6 @@ namespace Solvix.Server.Application.Services
             }
         }
 
-        public async Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken)
-        {
-            try
-            {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    _logger.LogWarning("User not found for FCM token update: {UserId}", userId);
-                    return false;
-                }
-
-                user.FcmToken = fcmToken;
-                await _unitOfWork.CompleteAsync();
-                _logger.LogInformation("FCM token updated for user {UserId}", userId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating FCM token for user {UserId}", userId);
-                return false;
-            }
-        }
-
-        public async Task<bool> UpdateUserLastActiveAsync(long userId)
-        {
-            try
-            {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                    return false;
-
-                user.LastActiveAt = DateTime.UtcNow;
-                await _unitOfWork.CompleteAsync();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating last active time for user {UserId}", userId);
-                return false;
-            }
-        }
-
-
         public async Task<IEnumerable<UserDto>> SearchContactsAsync(long userId, string searchTerm, int limit = 20)
         {
             try
@@ -442,7 +373,6 @@ namespace Solvix.Server.Application.Services
                     var isOnline = await _connectionService.IsUserOnlineAsync(contact.ContactUser.Id);
                     var userDto = MappingHelper.MapToUserDto(contact.ContactUser, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه
                     userDto.IsFavorite = contact.IsFavorite;
                     userDto.IsBlocked = contact.IsBlocked;
                     userDto.DisplayName = contact.DisplayName;
@@ -467,21 +397,19 @@ namespace Solvix.Server.Application.Services
             try
             {
                 var favoriteContacts = await _unitOfWork.UserContactRepository.ListAsync(
-             uc => uc.OwnerUserId == userId && uc.IsFavorite && !uc.IsBlocked,
-             includeProperties: "ContactUser");
+                    uc => uc.OwnerUserId == userId && uc.IsFavorite && !uc.IsBlocked,
+                    includeProperties: "ContactUser");
 
-                // مرتب‌سازی بعد از دریافت data
                 var orderedContacts = favoriteContacts
                     .OrderBy(uc => uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
                     .ToList();
 
                 var userDtos = new List<UserDto>();
-                foreach (var contact in favoriteContacts)
+                foreach (var contact in orderedContacts)
                 {
                     var isOnline = await _connectionService.IsUserOnlineAsync(contact.ContactUser.Id);
                     var userDto = MappingHelper.MapToUserDto(contact.ContactUser, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه
                     userDto.IsFavorite = contact.IsFavorite;
                     userDto.IsBlocked = contact.IsBlocked;
                     userDto.DisplayName = contact.DisplayName;
@@ -513,7 +441,6 @@ namespace Solvix.Server.Application.Services
                     var isOnline = await _connectionService.IsUserOnlineAsync(contact.ContactUser.Id);
                     var userDto = MappingHelper.MapToUserDto(contact.ContactUser, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه
                     userDto.IsFavorite = contact.IsFavorite;
                     userDto.IsBlocked = contact.IsBlocked;
                     userDto.DisplayName = contact.DisplayName;
@@ -547,14 +474,49 @@ namespace Solvix.Server.Application.Services
             }
         }
 
-        // متد کمکی برای validation
-        private async Task<bool> IsValidContactAsync(long ownerId, long contactId)
+        public async Task<bool> UpdateUserLastActiveAsync(long userId)
         {
-            var contact = await _unitOfWork.UserContactRepository.GetUserContactAsync(ownerId, contactId);
-            return contact != null;
+            try
+            {
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null)
+                    return false;
+
+                user.LastActiveAt = DateTime.UtcNow;
+                await _unitOfWork.CompleteAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating last active time for user {UserId}", userId);
+                return false;
+            }
         }
 
+        public async Task<bool> UpdateFcmTokenAsync(long userId, string fcmToken)
+        {
+            try
+            {
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found for FCM token update: {UserId}", userId);
+                    return false;
+                }
 
+                user.FcmToken = fcmToken;
+                await _unitOfWork.CompleteAsync();
+                _logger.LogInformation("FCM token updated for user {UserId}", userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating FCM token for user {UserId}", userId);
+                return false;
+            }
+        }
+
+        // متدهای جدید برای statistics و advanced operations
         public async Task<int> GetContactsCountAsync(long userId)
         {
             try
@@ -609,14 +571,12 @@ namespace Solvix.Server.Application.Services
                     .Include(uc => uc.ContactUser)
                     .Where(uc => uc.OwnerUserId == userId);
 
-                // فیلتر کردن
                 if (isFavorite.HasValue)
                     query = query.Where(uc => uc.IsFavorite == isFavorite.Value);
 
                 if (isBlocked.HasValue)
                     query = query.Where(uc => uc.IsBlocked == isBlocked.Value);
 
-                // مرتب‌سازی
                 query = sortBy.ToLower() switch
                 {
                     "name" => sortDirection.ToLower() == "desc"
@@ -633,7 +593,6 @@ namespace Solvix.Server.Application.Services
 
                 var contacts = await query.ToListAsync();
 
-                // اگر hasChat فیلتر شده باشد، باید اطلاعات چت را هم بررسی کنیم
                 if (hasChat.HasValue)
                 {
                     var contactUserIds = contacts.Select(c => c.ContactUserId).ToList();
@@ -659,7 +618,6 @@ namespace Solvix.Server.Application.Services
                     var isOnline = await _connectionService.IsUserOnlineAsync(contact.ContactUser.Id);
                     var userDto = MappingHelper.MapToUserDto(contact.ContactUser, isOnline);
 
-                    // اضافه کردن اطلاعات رابطه
                     userDto.IsFavorite = contact.IsFavorite;
                     userDto.IsBlocked = contact.IsBlocked;
                     userDto.DisplayName = contact.DisplayName;
@@ -753,7 +711,13 @@ namespace Solvix.Server.Application.Services
                 {
                     try
                     {
-                        // پیدا کردن کاربر بر اساس شماره تلفن
+                        // بررسی اینکه شماره تلفن خالی نباشه
+                        if (string.IsNullOrWhiteSpace(contactItem.PhoneNumber))
+                        {
+                            result.ErrorCount++;
+                            continue;
+                        }
+
                         var existingUser = await _unitOfWork.UserRepository.GetByPhoneNumberAsync(contactItem.PhoneNumber);
                         if (existingUser == null)
                         {
@@ -761,7 +725,6 @@ namespace Solvix.Server.Application.Services
                             continue;
                         }
 
-                        // بررسی اینکه قبلاً مخاطب اضافه شده یا نه
                         var existingContact = await _unitOfWork.UserContactRepository.GetUserContactAsync(userId, existingUser.Id);
                         if (existingContact != null)
                         {
@@ -769,14 +732,14 @@ namespace Solvix.Server.Application.Services
                             continue;
                         }
 
-                        // اضافه کردن مخاطب جدید
                         contactsToAdd.Add(new UserContact
                         {
                             OwnerUserId = userId,
                             ContactUserId = existingUser.Id,
                             DisplayName = contactItem.DisplayName,
                             IsFavorite = contactItem.IsFavorite,
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            IsBlocked = false
                         });
 
                         result.ImportedCount++;
@@ -882,8 +845,6 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                // اینجا می‌توانیم sync status را در یک جدول جداگانه ذخیره کنیم
-                // فعلاً فقط log می‌کنیم
                 _logger.LogInformation("Sync status updated for user {UserId}: LastSync={LastSync}, Count={Count}",
                     userId, lastSyncTime, syncedCount);
 
@@ -895,24 +856,5 @@ namespace Solvix.Server.Application.Services
                 return false;
             }
         }
-
-        // Helper classes
-        public class ContactImportResult
-        {
-            public int ImportedCount { get; set; }
-            public int DuplicateCount { get; set; }
-            public int ErrorCount { get; set; }
-        }
-
-        public class ImportContactItem
-        {
-            public string? FirstName { get; set; }
-            public string? LastName { get; set; }
-            public string? PhoneNumber { get; set; }
-            public string? Email { get; set; }
-            public string? DisplayName { get; set; }
-            public bool IsFavorite { get; set; }
-        }
-
     }
 }

@@ -511,7 +511,19 @@ namespace Solvix.Server.API.Controllers
             try
             {
                 var currentUserId = GetUserId();
-                var result = await _userService.ImportContactsAsync(currentUserId, importDto.Contacts);
+
+                // تبدیل DTO به مدل مناسب
+                var contactItems = importDto.Contacts.Select(c => new ImportContactItem
+                {
+                    FirstName = c.FirstName,
+                    LastName = c.LastName,
+                    PhoneNumber = c.PhoneNumber ?? string.Empty,
+                    Email = c.Email,
+                    DisplayName = c.DisplayName,
+                    IsFavorite = c.IsFavorite
+                }).ToList();
+
+                var result = await _userService.ImportContactsAsync(currentUserId, contactItems);
 
                 return Ok(new
                 {
@@ -571,18 +583,12 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
-        // DTOs اضافی مورد نیاز
-        public class BatchUpdateContactsDto
-        {
-            public List<long> ContactIds { get; set; } = new();
-            public Dictionary<string, object> Updates { get; set; } = new();
-        }
 
         public class ImportContactsDto
         {
-            public List<ImportContactItem> Contacts { get; set; } = new();
+            public List<ImportContactItemDto> Contacts { get; set; } = new();
 
-            public class ImportContactItem
+            public class ImportContactItemDto
             {
                 public string? FirstName { get; set; }
                 public string? LastName { get; set; }
@@ -607,5 +613,30 @@ namespace Solvix.Server.API.Controllers
             public DateTime LastSyncTime { get; set; }
             public int SyncedCount { get; set; }
         }
+
+        public class BatchUpdateContactsDto
+        {
+            public List<long> ContactIds { get; set; } = new();
+            public Dictionary<string, object> Updates { get; set; } = new();
+        }
+
+        public class FavoriteContactDto
+        {
+            [Required]
+            public bool IsFavorite { get; set; }
+        }
+
+        public class BlockContactDto
+        {
+            [Required]
+            public bool IsBlocked { get; set; }
+        }
+
+        public class UpdateDisplayNameDto
+        {
+            [MaxLength(100)]
+            public string? DisplayName { get; set; }
+        }
+
     }
 }

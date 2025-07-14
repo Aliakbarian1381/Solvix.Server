@@ -17,13 +17,13 @@ namespace Solvix.Server.Application.Helpers
             return new UserDto
             {
                 Id = user.Id,
-                Username = user.UserName ?? "",
+                UserName = user.UserName ?? "",  // تغییر از Username به UserName
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 PhoneNumber = user.PhoneNumber,
-                Token = token,
+                FcmToken = token,  // تغییر از Token به FcmToken
                 IsOnline = isOnline,
-                LastActive = user.LastActiveAt
+                LastActiveAt = user.LastActiveAt  // تغییر از LastActive به LastActiveAt
             };
         }
 

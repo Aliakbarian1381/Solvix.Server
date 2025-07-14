@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text;
+using Solvix.Server.Infrastructure.Repositories;
 
 namespace Solvix.Server.Application.Services
 {
@@ -516,7 +517,6 @@ namespace Solvix.Server.Application.Services
             }
         }
 
-        // متدهای جدید برای statistics و advanced operations
         public async Task<int> GetContactsCountAsync(long userId)
         {
             try
@@ -711,7 +711,6 @@ namespace Solvix.Server.Application.Services
                 {
                     try
                     {
-                        // بررسی اینکه شماره تلفن خالی نباشه
                         if (string.IsNullOrWhiteSpace(contactItem.PhoneNumber))
                         {
                             result.ErrorCount++;
@@ -767,6 +766,7 @@ namespace Solvix.Server.Application.Services
             }
         }
 
+        // متدهای Export که قبلاً نوشتیم اینجا هم بیان:
         public async Task<byte[]> ExportContactsAsync(long userId, string format)
         {
             try

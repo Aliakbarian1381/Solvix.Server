@@ -6,6 +6,7 @@ using Solvix.Server.API.Hubs;
 using Solvix.Server.Application.Services;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Core.Interfaces.Solvix.Server.Core.Interfaces;
 using Solvix.Server.Data;
 using Solvix.Server.Infrastructure.Repositories;
 using Solvix.Server.Infrastructure.Services;
@@ -99,6 +100,7 @@ builder.Services.AddHttpClient("OtpClient", client =>
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
+builder.Services.AddScoped<IUserContactRepository, UserContactRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 

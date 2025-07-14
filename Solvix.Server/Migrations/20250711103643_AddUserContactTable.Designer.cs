@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Solvix.Server.Data;
 
@@ -11,9 +12,11 @@ using Solvix.Server.Data;
 namespace Solvix.Server.Migrations
 {
     [DbContext(typeof(ChatDbContext))]
-    partial class ChatDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250711103643_AddUserContactTable")]
+    partial class AddUserContactTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -255,17 +258,8 @@ namespace Solvix.Server.Migrations
                     b.Property<bool>("IsGroup")
                         .HasColumnType("bit");
 
-                    b.Property<string>("LastMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("LastMessageTime")
-                        .HasColumnType("datetime2");
-
                     b.Property<string>("Title")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("UnreadCount")
-                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -358,29 +352,11 @@ namespace Solvix.Server.Migrations
                     b.Property<long>("ContactUserId")
                         .HasColumnType("bigint");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DisplayName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<long>("Id")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("IsBlocked")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsFavorite")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastInteractionAt")
-                        .HasColumnType("datetime2");
-
                     b.HasKey("OwnerUserId", "ContactUserId");
 
                     b.HasIndex("ContactUserId");
 
-                    b.ToTable("UserContacts");
+                    b.ToTable("UserContact");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<long>", b =>

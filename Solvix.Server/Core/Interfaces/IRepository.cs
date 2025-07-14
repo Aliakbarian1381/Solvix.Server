@@ -6,11 +6,14 @@ namespace Solvix.Server.Core.Interfaces
     {
         Task<T?> GetByIdAsync(object id);
         Task<IReadOnlyList<T>> ListAllAsync();
-        Task<IReadOnlyList<T>> ListAsync(Expression<Func<T, bool>> predicate);
+        Task<IReadOnlyList<T>> ListAsync(Expression<Func<T, bool>>? predicate = null, string? includeProperties = null);
         Task<T> AddAsync(T entity);
         Task UpdateAsync(T entity);
         Task DeleteAsync(T entity);
         Task<bool> AnyAsync(Expression<Func<T, bool>> predicate);
         Task<int> CountAsync(Expression<Func<T, bool>> predicate);
+        Task<T?> FindAsync(Expression<Func<T, bool>> predicate);
+        Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate);
+        IQueryable<T> GetQueryable();
     }
 }

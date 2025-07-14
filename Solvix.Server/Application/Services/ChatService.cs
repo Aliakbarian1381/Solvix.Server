@@ -148,6 +148,14 @@ namespace Solvix.Server.Application.Services
 
             await _unitOfWork.MessageRepository.AddAsync(newMessage);
 
+            var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+            if (chat != null)
+            {
+                chat.LastMessage = content;
+                chat.LastMessageTime = newMessage.SentAt;
+                // منطق UnreadCount را هم باید اینجا پیاده کنید
+            }
+
             try
             {
                 await _unitOfWork.CompleteAsync();

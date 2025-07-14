@@ -16,10 +16,13 @@ namespace Solvix.Server.Data
         public DbSet<UserConnection> UserConnections { get; set; }
         public DbSet<Chat> Chats { get; set; }
         public DbSet<ChatParticipant> ChatParticipants { get; set; }
+        public DbSet<UserContact> UserContacts { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+
 
             modelBuilder.Entity<AppUser>(entity =>
             {
@@ -69,6 +72,21 @@ namespace Solvix.Server.Data
                       .WithMany()
                       .HasForeignKey(cp => cp.UserId);
             });
+
+            modelBuilder.Entity<UserContact>()
+            .HasKey(uc => new { uc.OwnerUserId, uc.ContactUserId });
+
+            modelBuilder.Entity<UserContact>()
+                .HasOne(uc => uc.OwnerUser)
+                .WithMany()
+                .HasForeignKey(uc => uc.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<UserContact>()
+                .HasOne(uc => uc.ContactUser)
+                .WithMany()
+                .HasForeignKey(uc => uc.ContactUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

@@ -12,6 +12,11 @@ namespace Solvix.Server.Application.DTOs
         public bool IsOnline { get; set; }
         public DateTime? LastActiveAt { get; set; }
         public string? ProfilePictureUrl { get; set; }
+
+        // JWT Token برای احراز هویت
+        public string? Token { get; set; }
+
+        // FCM Token برای push notifications
         public string? FcmToken { get; set; }
 
         // اطلاعات مخاطب

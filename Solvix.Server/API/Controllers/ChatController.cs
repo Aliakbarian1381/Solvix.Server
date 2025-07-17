@@ -44,7 +44,6 @@ namespace Solvix.Server.API.Controllers
             }
         }
 
-
         [HttpPost("create-group")]
         public async Task<IActionResult> CreateGroupChat([FromBody] CreateGroupDto dto)
         {

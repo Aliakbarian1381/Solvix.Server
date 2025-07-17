@@ -122,6 +122,39 @@ namespace Solvix.Server.Application.Services
             }
         }
 
+        public async Task<bool> UpdateGroupSettingsAsync(Guid chatId, long requesterId, GroupSettingsDto settings)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    return false;
+
+                // بررسی مجوز - فقط مالک و ادمین‌ها
+                var requesterParticipant = chat.Participants
+                    .FirstOrDefault(p => p.UserId == requesterId && p.IsActive);
+
+                if (requesterParticipant == null || requesterParticipant.Role < GroupRole.Admin)
+                    return false;
+
+                // به‌روزرسانی تنظیمات
+                chat.OnlyAdminsCanSendMessages = settings.OnlyAdminsCanSendMessages;
+                chat.OnlyAdminsCanAddMembers = settings.OnlyAdminsCanAddMembers;
+                chat.OnlyAdminsCanEditGroupInfo = settings.OnlyAdminsCanEditGroupInfo;
+                chat.MaxMembers = settings.MaxMembers;
+
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("Group {ChatId} settings updated by user {UserId}", chatId, requesterId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating group settings for chat {ChatId}", chatId);
+                return false;
+            }
+        }
+
         public async Task<bool> AddMembersAsync(Guid chatId, long adminId, List<long> userIds)
         {
             try

@@ -492,15 +492,16 @@ namespace Solvix.Server.Application.Services
                 var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
                 if (chat == null || !chat.IsGroup) return false;
 
-                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
-                if (member == null) return false;
+                var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, userId);
+                if (participant == null) return false;
 
-                if (member.Role == GroupRole.Owner) return true;
+                // Owner همیشه می‌تونه
+                if (chat.OwnerId == userId) return true;
 
-                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
-                if (settings?.OnlyAdminsCanAddMembers == true)
+                // اگر فقط ادمین‌ها می‌تونند
+                if (chat.OnlyAdminsCanAddMembers)
                 {
-                    return member.Role == GroupRole.Admin;
+                    return participant.Role >= GroupRole.Admin;
                 }
 
                 return true;
@@ -862,6 +863,26 @@ namespace Solvix.Server.Application.Services
             {
                 _logger.LogError(ex, "Error adding member to group {ChatId}", chatId);
                 return ServerError("خطا در اضافه کردن عضو");
+            }
+        }
+
+        public async Task<bool> HasRemoveMemberPermissionAsync(Guid chatId, long userId)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup) return false;
+
+                var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, userId);
+                if (participant == null) return false;
+
+                // فقط Owner و Admin می‌تونند
+                return chat.OwnerId == userId || participant.Role >= GroupRole.Admin;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking remove member permission for user {UserId} in chat {ChatId}", userId, chatId);
+                return false;
             }
         }
 

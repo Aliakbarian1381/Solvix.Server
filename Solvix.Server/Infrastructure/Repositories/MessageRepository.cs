@@ -5,13 +5,13 @@ using Solvix.Server.Data;
 
 namespace Solvix.Server.Infrastructure.Repositories
 {
-    public class MessageRepository : Repository<Message>, IMessageRepository
+    public partial class MessageRepository : IMessageRepository
     {
-        private readonly ChatDbContext _chatDbContext;
+        private readonly ChatDbContext _context;
 
-        public MessageRepository(ChatDbContext chatDbContext) : base(chatDbContext)
+        public MessageRepository(ChatDbContext context)
         {
-            _chatDbContext = chatDbContext;
+            _context = context;
         }
 
         public async Task<List<Message>> GetChatMessagesAsync(Guid chatId, int skip = 0, int take = 50)

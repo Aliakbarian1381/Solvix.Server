@@ -56,7 +56,7 @@ namespace Solvix.Server.API.Hubs
             var userId = GetUserId();
             if (userId > 0)
             {
-                await _userConnectionService.RemoveConnectionAsync(userId, Context.ConnectionId);
+                await _userConnectionService.RemoveConnectionAsync(Context.ConnectionId);
                 _logger.LogInformation("User {UserId} disconnected with connection {ConnectionId}", userId, Context.ConnectionId);
             }
             await base.OnDisconnectedAsync(exception);
@@ -239,36 +239,6 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-        public async Task MarkMultipleMessagesAsRead(Guid chatId, List<int> messageIds)
-        {
-            var readerUserId = GetUserIdFromContext();
-            if (!readerUserId.HasValue)
-            {
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت.");
-                return;
-            }
-
-            try
-            {
-                if (!await _chatService.IsUserParticipantAsync(chatId, readerUserId.Value))
-                {
-                    await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
-                    return;
-                }
-
-                // تغییر signature method
-                await _chatService.MarkMultipleMessagesAsReadAsync(chatId, messageIds, readerUserId.Value);
-
-                _logger.LogInformation("User {UserId} marked {Count} messages as read in chat {ChatId}",
-                    readerUserId.Value, messageIds.Count, chatId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error marking messages as read for User {UserId} in chat {ChatId}",
-                    readerUserId.Value, chatId);
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در علامت‌گذاری پیام‌ها.");
-            }
-        }
 
         // ✅ متد جدید برای مدیریت گروه - اضافه کردن عضو
         public async Task AddMemberToGroup(Guid chatId, long newMemberId)
@@ -319,14 +289,14 @@ namespace Solvix.Server.API.Hubs
 
             try
             {
-                await _chatService.MarkMultipleMessagesAsReadAsync(messageIds, userId);
-
-                // Notify other participants about read status
+                // اینجا باید chatId هم پاس بدین
+                // اما چون از signature قدیمی استفاده می‌کنین، باید اول پیام رو دریافت کنین
                 foreach (var messageId in messageIds)
                 {
                     var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
                     if (message != null)
                     {
+                        await _chatService.MarkMultipleMessagesAsReadAsync(new List<int> { messageId }, userId);
                         await Clients.Group($"Chat_{message.ChatId}")
                             .SendAsync("MessageRead", new { MessageId = messageId, ReaderId = userId });
                     }
@@ -366,7 +336,7 @@ namespace Solvix.Server.API.Hubs
                 await Clients.Group(chatId.ToString()).SendAsync("MemberRemoved", chatId, memberToRemoveId);
 
                 // حذف عضو از گروه SignalR
-                var memberConnections = await _connectionService.GetConnectionsForUserAsync(memberToRemoveId);
+                var memberConnections = await _userConnectionService.GetConnectionsForUserAsync(memberToRemoveId);
                 foreach (var connectionId in memberConnections)
                 {
                     await Groups.RemoveFromGroupAsync(connectionId, chatId.ToString());
@@ -519,7 +489,7 @@ namespace Solvix.Server.API.Hubs
                 // ارسال وضعیت آنلاین بودن به هر کاربر
                 foreach (var contactId in contactIds)
                 {
-                    var connectionIds = await _connectionService.GetConnectionsForUserAsync(contactId);
+                    var connectionIds = await _userConnectionService.GetConnectionsForUserAsync(contactId);
 
                     foreach (var connectionId in connectionIds)
                     {

@@ -19,6 +19,7 @@ namespace Solvix.Server.Core.Entities
         public string? GroupImageUrl { get; set; }
 
         public string? LastMessage { get; set; }
+        public int UnreadCount { get; set; } = 0;
 
         public DateTime? LastMessageTime { get; set; }
 

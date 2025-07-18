@@ -17,6 +17,8 @@ namespace Solvix.Server.Data
         public DbSet<Participant> Participants { get; set; }
         public DbSet<GroupMember> GroupMembers { get; set; }
         public DbSet<GroupSettings> GroupSettings { get; set; }
+        public DbSet<UserConnection> UserConnections { get; set; }
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -47,6 +49,17 @@ namespace Solvix.Server.Data
                 entity.HasOne(e => e.GroupSettings)
                     .WithOne(e => e.Chat)
                     .HasForeignKey<GroupSettings>(e => e.ChatId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<UserConnection>(entity =>
+            {
+                entity.HasKey(e => e.ConnectionId);
+                entity.HasIndex(e => e.UserId);
+
+                entity.HasOne(e => e.User)
+                    .WithMany(e => e.Connections)
+                    .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 

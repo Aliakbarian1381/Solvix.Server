@@ -500,8 +500,19 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("گروه یافت نشد");
+
+                // بررسی اینکه کاربر قبلاً عضو نباشد
+                if (await IsUserParticipantAsync(chatId, memberId))
+                    throw new ArgumentException("کاربر قبلاً عضو گروه است");
+
+                // اضافه کردن عضو جدید
                 await _unitOfWork.ChatRepository.AddParticipantAsync(chatId, memberId);
                 await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {MemberId} added to group {ChatId}", memberId, chatId);
             }
             catch (Exception ex)
             {
@@ -514,8 +525,18 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("گروه یافت نشد");
+
+                // نمی‌توان مالک را حذف کرد
+                if (memberId == chat.OwnerId)
+                    throw new ArgumentException("نمی‌توان مالک گروه را حذف کرد");
+
                 await _unitOfWork.ChatRepository.RemoveParticipantAsync(chatId, memberId);
                 await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {MemberId} removed from group {ChatId}", memberId, chatId);
             }
             catch (Exception ex)
             {
@@ -529,15 +550,18 @@ namespace Solvix.Server.Application.Services
             try
             {
                 var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, memberId);
-                if (participant != null)
-                {
-                    participant.Role = newRole;
-                    await _unitOfWork.CompleteAsync();
-                }
+                if (participant == null)
+                    throw new ArgumentException("عضو یافت نشد");
+
+                participant.Role = newRole;
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("Role of member {MemberId} changed to {NewRole} in group {ChatId}",
+                    memberId, newRole, chatId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error changing role for member {MemberId} in group {ChatId}", memberId, chatId);
+                _logger.LogError(ex, "Error changing role of member {MemberId} in group {ChatId}", memberId, chatId);
                 throw;
             }
         }
@@ -546,8 +570,18 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("گروه یافت نشد");
+
+                // مالک نمی‌تواند گروه را ترک کند
+                if (userId == chat.OwnerId)
+                    throw new ArgumentException("مالک نمی‌تواند گروه را ترک کند");
+
                 await _unitOfWork.ChatRepository.RemoveParticipantAsync(chatId, userId);
                 await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {UserId} left group {ChatId}", userId, chatId);
             }
             catch (Exception ex)
             {
@@ -560,16 +594,22 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                // Delete all messages first
-                await _unitOfWork.MessageRepository.DeleteAllMessagesAsync(chatId);
-
-                // Delete the chat
                 var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
-                if (chat != null)
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("گروه یافت نشد");
+
+                // حذف همه پیام‌ها
+                var messages = await _unitOfWork.MessageRepository.ListAsync(m => m.ChatId == chatId);
+                foreach (var message in messages)
                 {
-                    await _unitOfWork.ChatRepository.DeleteAsync(chat);
-                    await _unitOfWork.CompleteAsync();
+                    await _unitOfWork.MessageRepository.DeleteAsync(message);
                 }
+
+                // حذف گروه
+                await _unitOfWork.ChatRepository.DeleteAsync(chat);
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("Group {ChatId} deleted", chatId);
             }
             catch (Exception ex)
             {

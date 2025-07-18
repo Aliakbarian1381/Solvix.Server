@@ -97,6 +97,7 @@ namespace Solvix.Server.Application.Helpers
             return new GroupMemberDto
             {
                 Id = member.UserId,
+                UserId = member.UserId,
                 Username = member.User?.Username ?? "",
                 FirstName = member.User?.FirstName,
                 LastName = member.User?.LastName,

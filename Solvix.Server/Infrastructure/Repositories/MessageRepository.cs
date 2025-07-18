@@ -72,5 +72,28 @@ namespace Solvix.Server.Infrastructure.Repositories
             }
 
         }
+
+        public async Task DeleteAllMessagesAsync(Guid chatId)
+        {
+            var messages = await _context.Messages
+                .Where(m => m.ChatId == chatId)
+                .ToListAsync();
+            _context.Messages.RemoveRange(messages);
+        }
+
+        public async Task MarkMultipleAsReadAsync(List<int> messageIds, long userId)
+        {
+            var messages = await _context.Messages
+                .Where(m => messageIds.Contains(m.Id) && m.SenderId != userId)
+                .ToListAsync();
+
+            foreach (var message in messages)
+            {
+                message.IsRead = true;
+                message.ReadAt = DateTime.UtcNow;
+            }
+
+            _context.Messages.UpdateRange(messages);
+        }
     }
 }

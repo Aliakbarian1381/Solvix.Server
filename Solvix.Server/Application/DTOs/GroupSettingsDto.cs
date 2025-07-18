@@ -10,5 +10,7 @@
         public bool AllowMemberToLeave { get; set; } = true;
         public bool IsPublic { get; set; } = false;
         public string? JoinLink { get; set; }
+
+        public bool OnlyAdminsCanEditGroupInfo => OnlyAdminsCanEditInfo;
     }
 }

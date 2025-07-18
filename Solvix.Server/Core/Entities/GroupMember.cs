@@ -12,9 +12,9 @@ namespace Solvix.Server.Core.Entities
         public DateTime JoinedAt { get; set; }
 
         [ForeignKey(nameof(ChatId))]
-        public virtual Chat Chat { get; set; }
+        public virtual Chat Chat { get; set; } = null!;
 
         [ForeignKey(nameof(UserId))]
-        public virtual User User { get; set; }
+        public virtual User User { get; set; } = null!;
     }
 }

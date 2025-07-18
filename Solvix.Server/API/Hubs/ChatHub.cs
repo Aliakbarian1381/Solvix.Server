@@ -215,7 +215,6 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-        // ✅ اضافه کردن متد جدید MarkMultipleMessagesAsRead
         public async Task MarkMultipleMessagesAsRead(Guid chatId, List<int> messageIds)
         {
             var readerUserId = GetUserIdFromContext();
@@ -227,14 +226,13 @@ namespace Solvix.Server.API.Hubs
 
             try
             {
-                // بررسی عضویت کاربر در چت
                 if (!await _chatService.IsUserParticipantAsync(chatId, readerUserId.Value))
                 {
                     await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
                     return;
                 }
 
-                // علامت‌گذاری پیام‌ها به عنوان خوانده شده
+                // تغییر signature method
                 await _chatService.MarkMultipleMessagesAsReadAsync(chatId, messageIds, readerUserId.Value);
 
                 _logger.LogInformation("User {UserId} marked {Count} messages as read in chat {ChatId}",

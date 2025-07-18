@@ -16,6 +16,6 @@ namespace Solvix.Server.Core.Entities
         public string? JoinLink { get; set; }
 
         [ForeignKey(nameof(ChatId))]
-        public virtual Chat Chat { get; set; }
+        public virtual Chat Chat { get; set; } = null!;
     }
 }

@@ -34,6 +34,7 @@ namespace Solvix.Server.Infrastructure.Repositories
         {
             var settings = await _context.GroupSettings
                 .FirstOrDefaultAsync(gs => gs.ChatId == chatId);
+
             if (settings != null)
             {
                 _context.GroupSettings.Remove(settings);

@@ -7,101 +7,105 @@ namespace Solvix.Server.Infrastructure.Repositories
 {
     public class ChatRepository : Repository<Chat>, IChatRepository
     {
-        private readonly ChatDbContext _chatDbContext;
+        private readonly ChatDbContext _context;
 
-        public ChatRepository(ChatDbContext chatDbContext) : base(chatDbContext)
+        public ChatRepository(ChatDbContext context) : base(context)
         {
-            _chatDbContext = chatDbContext;
+            _context = context;
         }
 
         public async Task<List<Chat>> GetUserChatsAsync(long userId)
         {
-            return await _chatDbContext.Chats
+            return await _context.Chats
                 .Include(c => c.Participants)
-                .ThenInclude(p => p.User)
-                 .Include(c => c.Messages)
-                .Where(c => c.Participants.Any(p => p.UserId == userId))
-                .OrderByDescending(c => c.Messages.Any(m => !m.IsDeleted) ? c.Messages.Where(m => !m.IsDeleted).Max(m => m.SentAt) : c.CreatedAt)
+                    .ThenInclude(p => p.User)
+                .Include(c => c.Messages.OrderByDescending(m => m.SentAt).Take(1))
+                .Where(c => c.Participants.Any(p => p.UserId == userId && p.IsActive))
+                .OrderByDescending(c => c.LastMessageTime ?? c.CreatedAt)
                 .ToListAsync();
         }
 
         public async Task<Chat?> GetChatWithParticipantsAsync(Guid chatId)
         {
-            return await _chatDbContext.Chats
+            return await _context.Chats
                 .Include(c => c.Participants)
-                .ThenInclude(p => p.User)
+                    .ThenInclude(p => p.User)
+                .Include(c => c.GroupMembers)
+                    .ThenInclude(gm => gm.User)
+                .Include(c => c.GroupSettings)
                 .FirstOrDefaultAsync(c => c.Id == chatId);
-        }
-
-
-        public async Task<List<Chat>> SearchUserChatsAsync(long userId, string searchTerm)
-        {
-            var lowerSearchTerm = searchTerm.ToLower();
-
-            return await _chatDbContext.Chats
-                .Include(c => c.Participants).ThenInclude(p => p.User)
-                .Include(c => c.Messages)
-                .Where(c => c.Participants.Any(p => p.UserId == userId)) // Only user's chats
-                .Where(c =>
-                    (c.IsGroup && c.Title != null && c.Title.ToLower().Contains(lowerSearchTerm)) ||
-                    (!c.IsGroup && c.Participants.Any(p =>
-                        p.UserId != userId &&
-                        ((p.User.FirstName + " " + p.User.LastName).ToLower().Contains(lowerSearchTerm) ||
-                         (p.User.UserName != null && p.User.UserName.ToLower().Contains(lowerSearchTerm)))
-                    ))
-                )
-                .OrderByDescending(c => c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : c.CreatedAt)
-                .ToListAsync();
         }
 
         public async Task<Chat?> GetPrivateChatBetweenUsersAsync(long user1Id, long user2Id)
         {
-            var chats = await _chatDbContext.ChatParticipants
-                .Where(cp => cp.UserId == user1Id || cp.UserId == user2Id)
-                .GroupBy(cp => cp.ChatId)
-                .Where(g => g.Count() == 2 && g.Select(cp => cp.UserId).Contains(user1Id) && g.Select(cp => cp.UserId).Contains(user2Id))
-                .Select(g => g.Key)
-                .ToListAsync();
-
-            if (!chats.Any())
-                return null;
-
-            return await _chatDbContext.Chats
+            return await _context.Chats
                 .Include(c => c.Participants)
-                .ThenInclude(p => p.User)
-                .FirstOrDefaultAsync(c => c.Id == chats.First() && !c.IsGroup);
+                .Where(c => !c.IsGroup &&
+                           c.Participants.Count == 2 &&
+                           c.Participants.Any(p => p.UserId == user1Id && p.IsActive) &&
+                           c.Participants.Any(p => p.UserId == user2Id && p.IsActive))
+                .FirstOrDefaultAsync();
         }
 
         public async Task<bool> IsUserParticipantAsync(Guid chatId, long userId)
         {
-            return await _chatDbContext.ChatParticipants
-                .AnyAsync(cp => cp.ChatId == chatId && cp.UserId == userId);
+            return await _context.Participants
+                .AnyAsync(p => p.ChatId == chatId && p.UserId == userId && p.IsActive);
         }
 
         public async Task AddParticipantAsync(Guid chatId, long userId)
         {
-            var existingParticipant = await _chatDbContext.ChatParticipants
-                .FirstOrDefaultAsync(cp => cp.ChatId == chatId && cp.UserId == userId);
+            var existingParticipant = await _context.Participants
+                .FirstOrDefaultAsync(p => p.ChatId == chatId && p.UserId == userId);
 
-            if (existingParticipant == null)
+            if (existingParticipant != null)
             {
-                await _chatDbContext.ChatParticipants.AddAsync(new ChatParticipant
+                existingParticipant.IsActive = true;
+                existingParticipant.JoinedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                var participant = new Participant
                 {
                     ChatId = chatId,
-                    UserId = userId
-                });
+                    UserId = userId,
+                    Role = "Member",
+                    JoinedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                await _context.Participants.AddAsync(participant);
             }
         }
 
         public async Task RemoveParticipantAsync(Guid chatId, long userId)
         {
-            var participant = await _chatDbContext.ChatParticipants
-                .FirstOrDefaultAsync(cp => cp.ChatId == chatId && cp.UserId == userId);
+            var participant = await _context.Participants
+                .FirstOrDefaultAsync(p => p.ChatId == chatId && p.UserId == userId);
 
             if (participant != null)
             {
-                _chatDbContext.ChatParticipants.Remove(participant);
+                participant.IsActive = false;
             }
+        }
+
+        public async Task<List<Chat>> SearchUserChatsAsync(long userId, string searchTerm)
+        {
+            return await _context.Chats
+                .Include(c => c.Participants)
+                    .ThenInclude(p => p.User)
+                .Where(c => c.Participants.Any(p => p.UserId == userId && p.IsActive) &&
+                           (c.Title != null && c.Title.Contains(searchTerm) ||
+                            c.Participants.Any(p => p.User.UserName != null && p.User.UserName.Contains(searchTerm) ||
+                                                   p.User.FirstName != null && p.User.FirstName.Contains(searchTerm) ||
+                                                   p.User.LastName != null && p.User.LastName.Contains(searchTerm))))
+                .ToListAsync();
+        }
+
+        public async Task<Participant?> GetParticipantAsync(Guid chatId, long userId)
+        {
+            return await _context.Participants
+                .Include(p => p.User)
+                .FirstOrDefaultAsync(p => p.ChatId == chatId && p.UserId == userId && p.IsActive);
         }
     }
 }

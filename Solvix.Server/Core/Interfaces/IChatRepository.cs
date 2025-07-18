@@ -11,6 +11,6 @@ namespace Solvix.Server.Core.Interfaces
         Task AddParticipantAsync(Guid chatId, long userId);
         Task RemoveParticipantAsync(Guid chatId, long userId);
         Task<List<Chat>> SearchUserChatsAsync(long userId, string searchTerm);
-
+        Task<Participant?> GetParticipantAsync(Guid chatId, long userId);
     }
 }

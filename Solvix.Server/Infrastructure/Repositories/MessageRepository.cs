@@ -1,91 +1,53 @@
-﻿using Google;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
-using Solvix.Server.Infrastructure.Data;
+using Solvix.Server.Data;
 using System.Linq.Expressions;
 
 namespace Solvix.Server.Infrastructure.Repositories
 {
-    public class MessageRepository : IRepository<Message>, IMessageRepository
+    public class MessageRepository : Repository<Message>, IMessageRepository
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ChatDbContext _context;
 
-        public MessageRepository(ApplicationDbContext context)
+        public MessageRepository(ChatDbContext context) : base(context)
         {
             _context = context;
         }
 
-        // IRepository<Message> implementations
-        public async Task AddAsync(Message entity)
+        // Override base methods to fix return types
+        public override async Task<Message> AddAsync(Message entity)
         {
             await _context.Messages.AddAsync(entity);
+            return entity;
         }
 
-        public async Task<bool> AnyAsync(Expression<Func<Message, bool>> predicate)
-        {
-            return await _context.Messages.AnyAsync(predicate);
-        }
-
-        public async Task<int> CountAsync(Expression<Func<Message, bool>> predicate)
-        {
-            return await _context.Messages.CountAsync(predicate);
-        }
-
-        public async Task DeleteAsync(Message entity)
-        {
-            _context.Messages.Remove(entity);
-            await Task.CompletedTask;
-        }
-
-        public async Task<IEnumerable<Message>> FindAsync(Expression<Func<Message, bool>> predicate)
-        {
-            return await _context.Messages.Where(predicate).ToListAsync();
-        }
-
-        public async Task<Message?> FirstOrDefaultAsync(Expression<Func<Message, bool>> predicate)
+        public override async Task<Message?> FindAsync(Expression<Func<Message, bool>> predicate)
         {
             return await _context.Messages.FirstOrDefaultAsync(predicate);
         }
 
-        public async Task<Message?> GetByIdAsync(object id)
-        {
-            return await _context.Messages.FindAsync(id);
-        }
-
-        public IQueryable<Message> GetQueryable()
-        {
-            return _context.Messages.AsQueryable();
-        }
-
-        public async Task<IEnumerable<Message>> ListAllAsync()
+        public override async Task<IReadOnlyList<Message>> ListAllAsync()
         {
             return await _context.Messages.ToListAsync();
         }
 
-        public async Task<IEnumerable<Message>> ListAsync(Expression<Func<Message, bool>>? predicate = null, string? orderBy = null)
+        public override async Task<IReadOnlyList<Message>> ListAsync(Expression<Func<Message, bool>>? predicate = null, string? includeProperties = null)
         {
             IQueryable<Message> query = _context.Messages;
 
             if (predicate != null)
                 query = query.Where(predicate);
 
-            if (!string.IsNullOrEmpty(orderBy))
+            if (!string.IsNullOrEmpty(includeProperties))
             {
-                // Simple ordering implementation
-                if (orderBy.Contains("desc", StringComparison.OrdinalIgnoreCase))
-                    query = query.OrderByDescending(m => m.SentAt);
-                else
-                    query = query.OrderBy(m => m.SentAt);
+                foreach (var includeProperty in includeProperties.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    query = query.Include(includeProperty.Trim());
+                }
             }
 
             return await query.ToListAsync();
-        }
-
-        public async Task UpdateAsync(Message entity)
-        {
-            _context.Messages.Update(entity);
-            await Task.CompletedTask;
         }
 
         // IMessageRepository specific implementations
@@ -128,33 +90,26 @@ namespace Solvix.Server.Infrastructure.Repositories
 
         public async Task MarkMultipleAsReadAsync(List<int> messageIds, long readerId)
         {
-            var existingStatuses = await _context.MessageReadStatuses
-                .Where(mrs => messageIds.Contains(mrs.MessageId) && mrs.ReaderId == readerId)
-                .Select(mrs => mrs.MessageId)
-                .ToListAsync();
-
-            var newMessageIds = messageIds.Except(existingStatuses).ToList();
-
-            var newStatuses = newMessageIds.Select(messageId => new MessageReadStatus
+            foreach (var messageId in messageIds)
             {
-                MessageId = messageId,
-                ReaderId = readerId,
-                ReadAt = DateTime.UtcNow
-            }).ToList();
-
-            if (newStatuses.Any())
-            {
-                await _context.MessageReadStatuses.AddRangeAsync(newStatuses);
+                await MarkAsReadAsync(messageId, readerId);
             }
         }
 
         public async Task<int> GetUnreadCountAsync(Guid chatId, long userId)
         {
             return await _context.Messages
-                .Where(m => m.ChatId == chatId &&
-                           m.SenderId != userId &&
-                           !m.ReadStatuses.Any(rs => rs.ReaderId == userId))
+                .Where(m => m.ChatId == chatId && m.SenderId != userId)
+                .Where(m => !m.ReadStatuses.Any(rs => rs.ReaderId == userId))
                 .CountAsync();
+        }
+
+        public async Task DeleteAllMessagesAsync(Guid chatId)
+        {
+            var messages = await _context.Messages
+                .Where(m => m.ChatId == chatId)
+                .ToListAsync();
+            _context.Messages.RemoveRange(messages);
         }
     }
 }

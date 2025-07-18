@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Infrastructure.Repositories;
 using System.Security.Claims;
 
 namespace Solvix.Server.API.Hubs
@@ -280,6 +281,38 @@ namespace Solvix.Server.API.Hubs
                 _logger.LogError(ex, "Error adding member {NewMemberId} to group {ChatId} by admin {AdminId}",
                     newMemberId, chatId, adminUserId.Value);
                 await Clients.Caller.SendAsync("ReceiveError", "خطا در اضافه کردن عضو.");
+            }
+        }
+
+
+        public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds)
+        {
+            try
+            {
+                var userId = GetUserId();
+                if (userId <= 0)
+                {
+                    await Clients.Caller.SendAsync("Error", "User not authenticated");
+                    return;
+                }
+
+                await _chatService.MarkMultipleMessagesAsReadAsync(messageIds, userId);
+
+                // Notify other participants about read status
+                foreach (var messageId in messageIds)
+                {
+                    var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
+                    if (message != null)
+                    {
+                        await Clients.Group($"Chat_{message.ChatId}")
+                            .SendAsync("MessageRead", new { MessageId = messageId, ReaderId = userId });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in MarkMultipleMessagesAsReadAsync");
+                await Clients.Caller.SendAsync("Error", "Failed to mark messages as read");
             }
         }
 

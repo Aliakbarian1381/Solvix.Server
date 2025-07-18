@@ -11,6 +11,10 @@
         public bool IsPublic { get; set; } = false;
         public string? JoinLink { get; set; }
 
-        public bool OnlyAdminsCanEditGroupInfo => OnlyAdminsCanEditInfo;
+        public bool OnlyAdminsCanEditGroupInfo
+        {
+            get => OnlyAdminsCanEditInfo;
+            set => OnlyAdminsCanEditInfo = value;
+        }
     }
 }

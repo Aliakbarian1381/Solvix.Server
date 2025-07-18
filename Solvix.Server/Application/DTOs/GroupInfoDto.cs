@@ -8,6 +8,7 @@ namespace Solvix.Server.Application.DTOs
         public string Title { get; set; } = "";
         public string? Description { get; set; }
         public string? AvatarUrl { get; set; }
+        public string? GroupImageUrl { get; set; } // اضافه شده
         public long OwnerId { get; set; }
         public string OwnerName { get; set; } = "";
         public DateTime CreatedAt { get; set; }

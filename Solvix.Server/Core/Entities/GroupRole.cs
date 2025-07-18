@@ -2,8 +2,8 @@
 {
     public enum GroupRole
     {
-        Owner = 0,
+        Member = 0,
         Admin = 1,
-        Member = 2
+        Owner = 2
     }
 }

@@ -1,5 +1,4 @@
-﻿// ChatDbContext.cs
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
@@ -18,11 +17,14 @@ namespace Solvix.Server.Data
         public DbSet<ChatParticipant> ChatParticipants { get; set; }
         public DbSet<UserContact> UserContacts { get; set; }
 
+        // ✅ اضافه کردن DbSet های جدید برای سیستم گروه
+        public DbSet<GroupMember> GroupMembers { get; set; }
+        public DbSet<GroupSettings> GroupSettings { get; set; }
+        public DbSet<MessageReadStatus> MessageReadStatuses { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
-
 
             modelBuilder.Entity<AppUser>(entity =>
             {
@@ -32,12 +34,10 @@ namespace Solvix.Server.Data
             modelBuilder.Entity<Message>(entity =>
             {
                 entity.HasKey(m => m.Id);
-
                 entity.HasOne(m => m.Sender)
                       .WithMany(u => u.SentMessages)
                       .HasForeignKey(m => m.SenderId)
                       .OnDelete(DeleteBehavior.Restrict);
-
                 entity.HasOne(m => m.Chat)
                       .WithMany(c => c.Messages)
                       .HasForeignKey(m => m.ChatId)
@@ -63,30 +63,69 @@ namespace Solvix.Server.Data
             modelBuilder.Entity<ChatParticipant>(entity =>
             {
                 entity.HasKey(cp => new { cp.ChatId, cp.UserId });
-
                 entity.HasOne(cp => cp.Chat)
                       .WithMany(c => c.Participants)
                       .HasForeignKey(cp => cp.ChatId);
-
                 entity.HasOne(cp => cp.User)
                       .WithMany()
                       .HasForeignKey(cp => cp.UserId);
             });
 
             modelBuilder.Entity<UserContact>()
-            .HasKey(uc => new { uc.OwnerUserId, uc.ContactUserId });
-
+                .HasKey(uc => new { uc.OwnerUserId, uc.ContactUserId });
             modelBuilder.Entity<UserContact>()
                 .HasOne(uc => uc.OwnerUser)
                 .WithMany()
                 .HasForeignKey(uc => uc.OwnerUserId)
                 .OnDelete(DeleteBehavior.Restrict);
-
             modelBuilder.Entity<UserContact>()
                 .HasOne(uc => uc.ContactUser)
                 .WithMany()
                 .HasForeignKey(uc => uc.ContactUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // ✅ پیکربندی GroupMember
+            modelBuilder.Entity<GroupMember>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasOne(e => e.Chat)
+                      .WithMany(c => c.GroupMembers)
+                      .HasForeignKey(e => e.ChatId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.User)
+                      .WithMany()
+                      .HasForeignKey(e => e.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(e => new { e.ChatId, e.UserId }).IsUnique();
+                entity.Property(e => e.Role)
+                      .HasConversion<int>();
+            });
+
+            // ✅ پیکربندی GroupSettings
+            modelBuilder.Entity<GroupSettings>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasOne(e => e.Chat)
+                      .WithOne(c => c.GroupSettings)
+                      .HasForeignKey<GroupSettings>(e => e.ChatId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(e => e.ChatId).IsUnique();
+            });
+
+            // ✅ پیکربندی MessageReadStatus
+            modelBuilder.Entity<MessageReadStatus>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasOne(e => e.Message)
+                      .WithMany(m => m.ReadStatuses)
+                      .HasForeignKey(e => e.MessageId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.Reader)
+                      .WithMany()
+                      .HasForeignKey(e => e.ReaderId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasIndex(e => new { e.MessageId, e.ReaderId }).IsUnique();
+            });
         }
     }
 }

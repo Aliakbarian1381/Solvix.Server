@@ -1,14 +1,15 @@
-﻿using Google;
+﻿using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
+using Solvix.Server.Data;
 
 namespace Solvix.Server.Infrastructure.Repositories
 {
     public class GroupSettingsRepository : IGroupSettingsRepository
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ChatDbContext _context;
 
-        public GroupSettingsRepository(ApplicationDbContext context)
+        public GroupSettingsRepository(ChatDbContext context)
         {
             _context = context;
         }

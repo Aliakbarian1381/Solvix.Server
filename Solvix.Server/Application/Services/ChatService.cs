@@ -7,6 +7,7 @@ using Solvix.Server.API.Hubs;
 using Microsoft.VisualBasic;
 using FirebaseAdmin.Messaging;
 using SolvixMessage = Solvix.Server.Core.Entities.Message;
+using Microsoft.AspNetCore.Mvc;
 
 
 namespace Solvix.Server.Application.Services
@@ -483,5 +484,456 @@ namespace Solvix.Server.Application.Services
         {
             return await _unitOfWork.ChatRepository.IsUserParticipantAsync(chatId, userId);
         }
+
+        public async Task<bool> HasAddMemberPermissionAsync(Guid chatId, long userId)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup) return false;
+
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
+                if (member == null) return false;
+
+                // Owner always has permission
+                if (member.Role == GroupRole.Owner) return true;
+
+                // Check group settings
+                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
+                if (settings?.OnlyAdminsCanAddMembers == true)
+                {
+                    return member.Role == GroupRole.Admin;
+                }
+
+                return true; // All members can add if not restricted
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking group ownership for user {UserId} in chat {ChatId}", userId, chatId);
+                return false;
+            }
+        }
+
+        public async Task AddMemberToGroupAsync(Guid chatId, long memberId)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("Chat not found or is not a group");
+
+                // Check if user is already a member
+                var existingMember = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, memberId);
+                if (existingMember != null)
+                    throw new InvalidOperationException("User is already a member of this group");
+
+                // Check group capacity
+                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
+                var currentMemberCount = await _unitOfWork.GroupMemberRepository.GetMemberCountAsync(chatId);
+
+                if (currentMemberCount >= settings.MaxMembers)
+                    throw new InvalidOperationException("Group has reached maximum member capacity");
+
+                // Add new member
+                var newMember = new GroupMember
+                {
+                    ChatId = chatId,
+                    UserId = memberId,
+                    Role = GroupRole.Member,
+                    JoinedAt = DateTime.UtcNow
+                };
+
+                await _unitOfWork.GroupMemberRepository.AddAsync(newMember);
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {MemberId} added to group {ChatId}", memberId, chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding member {MemberId} to group {ChatId}", memberId, chatId);
+                throw;
+            }
+        }
+
+        public async Task RemoveMemberFromGroupAsync(Guid chatId, long memberId)
+        {
+            try
+            {
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, memberId);
+                if (member == null)
+                    throw new ArgumentException("Member not found in group");
+
+                // Cannot remove owner
+                if (member.Role == GroupRole.Owner)
+                    throw new InvalidOperationException("Cannot remove group owner");
+
+                await _unitOfWork.GroupMemberRepository.RemoveAsync(member);
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {MemberId} removed from group {ChatId}", memberId, chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error removing member {MemberId} from group {ChatId}", memberId, chatId);
+                throw;
+            }
+        }
+
+        public async Task ChangeMemberRoleAsync(Guid chatId, long memberId, string newRole)
+        {
+            try
+            {
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, memberId);
+                if (member == null)
+                    throw new ArgumentException("Member not found in group");
+
+                // Cannot change owner role
+                if (member.Role == GroupRole.Owner)
+                    throw new InvalidOperationException("Cannot change owner role");
+
+                // Parse new role
+                if (!Enum.TryParse<GroupRole>(newRole, true, out var role))
+                    throw new ArgumentException("Invalid role specified");
+
+                // Cannot promote to owner
+                if (role == GroupRole.Owner)
+                    throw new InvalidOperationException("Cannot promote member to owner");
+
+                member.Role = role;
+                await _unitOfWork.GroupMemberRepository.UpdateAsync(member);
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {MemberId} role changed to {NewRole} in group {ChatId}", memberId, newRole, chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error changing role for member {MemberId} in group {ChatId}", memberId, chatId);
+                throw;
+            }
+        }
+
+        public async Task LeaveGroupAsync(Guid chatId, long userId)
+        {
+            try
+            {
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
+                if (member == null)
+                    throw new ArgumentException("User is not a member of this group");
+
+                // Owner cannot leave, must transfer ownership or delete group
+                if (member.Role == GroupRole.Owner)
+                    throw new InvalidOperationException("Owner cannot leave group. Transfer ownership or delete group first.");
+
+                await _unitOfWork.GroupMemberRepository.RemoveAsync(member);
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("User {UserId} left group {ChatId}", userId, chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error leaving group {ChatId} for user {UserId}", chatId, userId);
+                throw;
+            }
+        }
+
+        public async Task DeleteGroupAsync(Guid chatId)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("Chat not found or is not a group");
+
+                // Delete all related data
+                await _unitOfWork.GroupMemberRepository.DeleteAllMembersAsync(chatId);
+                await _unitOfWork.GroupSettingsRepository.DeleteSettingsAsync(chatId);
+                await _unitOfWork.MessageRepository.DeleteAllMessagesAsync(chatId);
+                await _unitOfWork.ChatRepository.DeleteAsync(chat);
+
+                await _unitOfWork.CompleteAsync();
+
+                _logger.LogInformation("Group {ChatId} deleted successfully", chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting group {ChatId}", chatId);
+                throw;
+            }
+        }
+
+        public async Task<GroupInfoDto> GetGroupInfoAsync(Guid chatId, long userId)
+        {
+            try
+            {
+                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
+                if (chat == null || !chat.IsGroup)
+                    throw new ArgumentException("Chat not found or is not a group");
+
+                // Check if user is a member
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
+                if (member == null)
+                    throw new UnauthorizedAccessException("User is not a member of this group");
+
+                var members = await _unitOfWork.GroupMemberRepository.GetMembersAsync(chatId);
+                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
+                var owner = members.FirstOrDefault(m => m.Role == GroupRole.Owner);
+
+                return new GroupInfoDto
+                {
+                    Id = chatId.ToString(),
+                    Title = chat.Title,
+                    Description = chat.Description,
+                    AvatarUrl = chat.AvatarUrl,
+                    OwnerId = owner?.UserId ?? 0,
+                    OwnerName = owner?.User?.DisplayName ?? "Unknown",
+                    CreatedAt = chat.CreatedAt,
+                    MembersCount = members.Count,
+                    Members = members.Select(m => MappingHelper.MapToGroupMemberDto(m)).ToList(),
+                    Settings = MappingHelper.MapToGroupSettingsDto(settings)
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting group info for chat {ChatId}", chatId);
+                throw;
+            }
+        }
+
+        public async Task<GroupSettingsDto> GetGroupSettingsAsync(Guid chatId, long userId)
+        {
+            try
+            {
+                // Check if user is a member
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
+                if (member == null)
+                    throw new UnauthorizedAccessException("User is not a member of this group");
+
+                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
+                return MappingHelper.MapToGroupSettingsDto(settings);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting group settings for chat {ChatId}", chatId);
+                throw;
+            }
+        }
+
+        public async Task UpdateGroupSettingsAsync(Guid chatId, long userId, GroupSettingsDto settingsDto)
+        {
+            try
+            {
+                // Check if user has permission to update settings
+                var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
+                if (member == null)
+                    throw new UnauthorizedAccessException("User is not a member of this group");
+
+                if (member.Role != GroupRole.Owner && member.Role != GroupRole.Admin)
+                    throw new UnauthorizedAccessException("Only owners and admins can update group settings");
+
+                var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
+                if (settings == null)
+                {
+                    settings = new GroupSettings
+                    {
+                        ChatId = chatId,
+                        MaxMembers = settingsDto.MaxMembers,
+                        OnlyAdminsCanSendMessages = settingsDto.OnlyAdminsCanSendMessages,
+                        OnlyAdminsCanAddMembers = settingsDto.OnlyAdminsCanAddMembers,
+                        OnlyAdminsCanEditInfo = settingsDto.OnlyAdminsCanEditInfo,
+                        OnlyAdminsCanDeleteMessages = settingsDto.OnlyAdminsCanDeleteMessages,
+                        AllowMemberToLeave = settingsDto.AllowMemberToLeave,
+                        IsPublic = settingsDto.IsPublic,
+                        JoinLink = settingsDto.JoinLink
+                    };
+                    await _unitOfWork.GroupSettingsRepository.AddAsync(settings);
+                }
+                else
+                {
+                    settings.MaxMembers = settingsDto.MaxMembers;
+                    settings.OnlyAdminsCanSendMessages = settingsDto.OnlyAdminsCanSendMessages;
+                    settings.OnlyAdminsCanAddMembers = settingsDto.OnlyAdminsCanAddMembers;
+                    settings.OnlyAdminsCanEditInfo = settingsDto.OnlyAdminsCanEditInfo;
+                    settings.OnlyAdminsCanDeleteMessages = settingsDto.OnlyAdminsCanDeleteMessages;
+                    settings.AllowMemberToLeave = settingsDto.AllowMemberToLeave;
+                    settings.IsPublic = settingsDto.IsPublic;
+                    settings.JoinLink = settingsDto.JoinLink;
+
+                    await _unitOfWork.GroupSettingsRepository.UpdateAsync(settings);
+                }
+
+                await _unitOfWork.CompleteAsync();
+                _logger.LogInformation("Group settings updated for chat {ChatId} by user {UserId}", chatId, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating group settings for chat {ChatId}", chatId);
+                throw;
+            }
+        }
+}
+
+// ✅ اضافه کردن Controller endpoint های جدید
+// در ChatController.cs:
+
+[HttpGet("{chatId}/info")]
+        public async Task<IActionResult> GetGroupInfo(Guid chatId)
+        {
+            try
+            {
+                long userId = GetUserId();
+                var groupInfo = await _chatService.GetGroupInfoAsync(chatId, userId);
+                return Ok(new { data = groupInfo });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized attempt to get group info for chat {ChatId}", chatId);
+                return Forbidden("شما عضو این گروه نیستید");
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting group info for chat {ChatId}", chatId);
+                return ServerError("خطا در دریافت اطلاعات گروه");
+            }
+        }
+
+        [HttpGet("{chatId}/settings")]
+        public async Task<IActionResult> GetGroupSettings(Guid chatId)
+        {
+            try
+            {
+                long userId = GetUserId();
+                var settings = await _chatService.GetGroupSettingsAsync(chatId, userId);
+                return Ok(new { data = settings });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized attempt to get group settings for chat {ChatId}", chatId);
+                return Forbidden("شما عضو این گروه نیستید");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting group settings for chat {ChatId}", chatId);
+                return ServerError("خطا در دریافت تنظیمات گروه");
+            }
+        }
+
+        [HttpPut("{chatId}/settings")]
+        public async Task<IActionResult> UpdateGroupSettings(Guid chatId, [FromBody] GroupSettingsDto settingsDto)
+        {
+            try
+            {
+                long userId = GetUserId();
+                await _chatService.UpdateGroupSettingsAsync(chatId, userId, settingsDto);
+                return Ok(new { message = "تنظیمات گروه با موفقیت به‌روزرسانی شد" });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized attempt to update group settings for chat {ChatId}", chatId);
+                return Forbidden("شما دسترسی به تغییر تنظیمات این گروه ندارید");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating group settings for chat {ChatId}", chatId);
+                return ServerError("خطا در به‌روزرسانی تنظیمات گروه");
+            }
+        }
+
+        [HttpPost("{chatId}/add-member")]
+        public async Task<IActionResult> AddMemberToGroup(Guid chatId, [FromBody] AddMemberDto dto)
+        {
+            try
+            {
+                long userId = GetUserId();
+
+                // Check permission
+                if (!await _chatService.HasAddMemberPermissionAsync(chatId, userId))
+                    return Forbidden("شما دسترسی اضافه کردن عضو به این گروه ندارید");
+
+                await _chatService.AddMemberToGroupAsync(chatId, dto.MemberId);
+                return Ok(new { message = "عضو جدید با موفقیت اضافه شد" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding member to group {ChatId}", chatId);
+                return ServerError("خطا در اضافه کردن عضو");
+            }
+        }
+
+        [HttpDelete("{chatId}/remove-member/{memberId}")]
+        public async Task<IActionResult> RemoveMemberFromGroup(Guid chatId, long memberId)
+        {
+            try
+            {
+                long userId = GetUserId();
+
+                // Check permission
+                if (!await _chatService.HasRemoveMemberPermissionAsync(chatId, userId))
+                    return Forbidden("شما دسترسی حذف عضو از این گروه ندارید");
+
+                await _chatService.RemoveMemberFromGroupAsync(chatId, memberId);
+                return Ok(new { message = "عضو با موفقیت حذف شد" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error removing member from group {ChatId}", chatId);
+                return ServerError("خطا در حذف عضو");
+            }
+        }
+
+        [HttpPost("{chatId}/leave")]
+        public async Task<IActionResult> LeaveGroup(Guid chatId)
+        {
+            try
+            {
+                long userId = GetUserId();
+                await _chatService.LeaveGroupAsync(chatId, userId);
+                return Ok(new { message = "با موفقیت از گروه خارج شدید" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error leaving group {ChatId} for user {UserId}", chatId, userId);
+                return ServerError("خطا در خروج از گروه");
+            }
+        }
+
+        [HttpDelete("{chatId}")]
+        public async Task<IActionResult> DeleteGroup(Guid chatId)
+        {
+            try
+            {
+                long userId = GetUserId();
+
+                // Check if user is owner
+                if (!await _chatService.IsGroupOwnerAsync(chatId, userId))
+                    return Forbidden("فقط مالک گروه می‌تواند آن را حذف کند");
+
+                await _chatService.DeleteGroupAsync(chatId);
+                return Ok(new { message = "گروه با موفقیت حذف شد" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting group {ChatId}", chatId);
+                return ServerError("خطا در حذف گروه");
+            }
+        }
+
+
+
     }
 }

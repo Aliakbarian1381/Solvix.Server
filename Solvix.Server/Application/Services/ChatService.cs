@@ -495,21 +495,19 @@ namespace Solvix.Server.Application.Services
                 var member = await _unitOfWork.GroupMemberRepository.GetMemberAsync(chatId, userId);
                 if (member == null) return false;
 
-                // Owner always has permission
                 if (member.Role == GroupRole.Owner) return true;
 
-                // Check group settings
                 var settings = await _unitOfWork.GroupSettingsRepository.GetSettingsAsync(chatId);
                 if (settings?.OnlyAdminsCanAddMembers == true)
                 {
                     return member.Role == GroupRole.Admin;
                 }
 
-                return true; // All members can add if not restricted
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking group ownership for user {UserId} in chat {ChatId}", userId, chatId);
+                _logger.LogError(ex, "Error checking add member permission for user {UserId} in chat {ChatId}", userId, chatId);
                 return false;
             }
         }

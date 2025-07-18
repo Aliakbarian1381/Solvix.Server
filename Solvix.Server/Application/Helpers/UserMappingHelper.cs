@@ -91,5 +91,41 @@ namespace Solvix.Server.Application.Helpers
                                                             )).ToList() ?? new List<UserDto>()
             };
         }
+
+        public static GroupMemberDto MapToGroupMemberDto(GroupMember member)
+        {
+            return new GroupMemberDto
+            {
+                Id = member.UserId,
+                Username = member.User?.Username ?? "",
+                FirstName = member.User?.FirstName,
+                LastName = member.User?.LastName,
+                ProfilePictureUrl = member.User?.ProfilePictureUrl,
+                Role = member.Role.ToString(),
+                JoinedAt = member.JoinedAt,
+                IsOnline = member.User?.IsOnline ?? false,
+                LastActive = member.User?.LastActiveAt
+            };
+        }
+
+        public static GroupSettingsDto MapToGroupSettingsDto(GroupSettings? settings)
+        {
+            if (settings == null)
+            {
+                return new GroupSettingsDto();
+            }
+
+            return new GroupSettingsDto
+            {
+                MaxMembers = settings.MaxMembers,
+                OnlyAdminsCanSendMessages = settings.OnlyAdminsCanSendMessages,
+                OnlyAdminsCanAddMembers = settings.OnlyAdminsCanAddMembers,
+                OnlyAdminsCanEditInfo = settings.OnlyAdminsCanEditInfo,
+                OnlyAdminsCanDeleteMessages = settings.OnlyAdminsCanDeleteMessages,
+                AllowMemberToLeave = settings.AllowMemberToLeave,
+                IsPublic = settings.IsPublic,
+                JoinLink = settings.JoinLink
+            };
+        }
     }
 }

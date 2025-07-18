@@ -9,5 +9,6 @@ namespace Solvix.Server.Core.Interfaces
         Task<List<Message>> GetUnreadMessagesAsync(Guid chatId, long userId);
         Task MarkAsReadAsync(int messageId, long userId);
         Task MarkMultipleAsReadAsync(List<int> messageIds, long userId);
+        Task DeleteAllMessagesAsync(Guid chatId);
     }
 }

@@ -24,6 +24,6 @@ namespace Solvix.Server.Core.Entities
         public virtual Chat Chat { get; set; } = null!;
 
         [ForeignKey("UserId")]
-        public virtual User User { get; set; } = null!;
+        public virtual AppUser User { get; set; } = null!;
     }
 }

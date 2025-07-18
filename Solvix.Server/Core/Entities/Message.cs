@@ -14,8 +14,7 @@
         public bool IsEdited { get; set; } = false;
         public DateTime? EditedAt { get; set; }
         public bool IsDeleted { get; set; } = false;
+        public DateTime? DeletedAt { get; set; } // اضافه شده
         public virtual ICollection<MessageReadStatus> ReadStatuses { get; set; } = new List<MessageReadStatus>();
-
-
     }
 }

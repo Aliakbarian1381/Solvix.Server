@@ -713,12 +713,11 @@ namespace Solvix.Server.Application.Services
                             var senderName = message.Sender?.UserName ?? "کاربر";
                             var chatTitle = chat.IsGroup ? chat.Title : senderName;
 
-                            var notificationPayload = new
+                            // تصحیح: استفاده از FirebaseAdmin.Messaging.Notification
+                            var notification = new FirebaseAdmin.Messaging.Notification
                             {
-                                title = chatTitle,
-                                body = message.Content,
-                                sound = "default",
-                                badge = 1
+                                Title = chatTitle,
+                                Body = message.Content
                             };
 
                             var notifData = new Dictionary<string, string>
@@ -730,7 +729,7 @@ namespace Solvix.Server.Application.Services
                                 ["senderName"] = senderName
                             };
 
-                            await _notificationService.SendNotificationAsync(recipientUser, notificationPayload, notifData);
+                            await _notificationService.SendNotificationAsync(recipientUser, notification, notifData);
                         }
                     }
                 }

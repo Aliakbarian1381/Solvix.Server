@@ -141,6 +141,77 @@ namespace Solvix.Server.Application.Services
             }
         }
 
+
+        public async Task SendMessage(Guid chatId, string content, string? correlationId = null)
+        {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    await Clients.Caller.SendAsync("Error", "محتوای پیام نمی‌تواند خالی باشد");
+                    return;
+                }
+
+                var message = await _chatService.SaveMessageAsync(chatId, userId, content);
+                await _chatService.BroadcastMessageAsync(message);
+
+                // Send confirmation to sender
+                if (!string.IsNullOrEmpty(correlationId))
+                {
+                    await Clients.Caller.SendAsync("MessageSent", new
+                    {
+                        CorrelationId = correlationId,
+                        MessageId = message.Id,
+                        SentAt = message.SentAt
+                    });
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Clients.Caller.SendAsync("Error", "شما عضو این چت نیستید");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending message to chat {ChatId}", chatId);
+                await Clients.Caller.SendAsync("Error", "خطا در ارسال پیام");
+            }
+        }
+
+        public async Task EditMessage(int messageId, string newContent)
+        {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            try
+            {
+                var editedMessage = await _chatService.EditMessageAsync(messageId, newContent, userId);
+                if (editedMessage != null)
+                {
+                    await _chatService.BroadcastMessageUpdateAsync(editedMessage);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "شما اجازه ویرایش این پیام را ندارید");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error editing message {MessageId}", messageId);
+                await Clients.Caller.SendAsync("Error", "خطا در ویرایش پیام");
+            }
+        }
+
         public async Task<bool> UpdateGroupSettingsAsync(Guid chatId, long requesterId, GroupSettingsDto settings)
         {
             try

@@ -11,21 +11,21 @@ namespace Solvix.Server.API.Hubs
     [Authorize]
     public class ChatHub : Hub
     {
-        private readonly IUserConnectionService _connectionService;
         private readonly IChatService _chatService;
-        private readonly IUserService _userService;
+        private readonly IUserConnectionService _userConnectionService;
         private readonly ILogger<ChatHub> _logger;
+        private readonly IUnitOfWork _unitOfWork;
 
         public ChatHub(
-            IUserConnectionService connectionService,
             IChatService chatService,
-            IUserService userService,
-            ILogger<ChatHub> logger)
+            IUserConnectionService userConnectionService,
+            ILogger<ChatHub> logger,
+            IUnitOfWork unitOfWork)
         {
-            _connectionService = connectionService;
             _chatService = chatService;
-            _userService = userService;
+            _userConnectionService = userConnectionService;
             _logger = logger;
+            _unitOfWork = unitOfWork;
         }
 
         private long? GetUserIdFromContext()
@@ -42,55 +42,91 @@ namespace Solvix.Server.API.Hubs
 
         public override async Task OnConnectedAsync()
         {
-            var userId = GetUserIdFromContext();
-            if (userId.HasValue)
+            var userId = GetUserId();
+            if (userId > 0)
             {
-                await _connectionService.AddConnectionAsync(userId.Value, Context.ConnectionId);
-                await _userService.UpdateUserLastActiveAsync(userId.Value);
-
-                _logger.LogInformation("User {UserId} connected with connection {ConnectionId}",
-                    userId.Value, Context.ConnectionId);
-
-                await Clients.Caller.SendAsync("HubConnectionRegistered");
-                _logger.LogInformation("Sent HubConnectionRegistered to client {ConnectionId}", Context.ConnectionId);
-
-                // اطلاع‌رسانی به کاربران دیگر درباره آنلاین شدن این کاربر
-                await NotifyUserStatusChanged(userId.Value, true);
+                await _userConnectionService.AddConnectionAsync(userId, Context.ConnectionId);
+                _logger.LogInformation("User {UserId} connected with connection {ConnectionId}", userId, Context.ConnectionId);
             }
-
             await base.OnConnectedAsync();
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            var connectionId = Context.ConnectionId;
-            var userId = await _connectionService.GetUserIdForConnectionAsync(connectionId);
-
-            await _connectionService.RemoveConnectionAsync(connectionId);
-
-            if (userId.HasValue)
+            var userId = GetUserId();
+            if (userId > 0)
             {
-                await _userService.UpdateUserLastActiveAsync(userId.Value);
-
-                _logger.LogInformation("User {UserId} disconnected from connection {ConnectionId}. Error: {Error}",
-                    userId.Value, connectionId, exception?.Message);
-
-                // بررسی آیا کاربر هنوز اتصال دیگری دارد
-                var remainingConnections = await _connectionService.GetConnectionsForUserAsync(userId.Value);
-                if (remainingConnections.Count == 0)
-                {
-                    // اطلاع‌رسانی به کاربران دیگر درباره آفلاین شدن کاربر
-                    await NotifyUserStatusChanged(userId.Value, false);
-                }
+                await _userConnectionService.RemoveConnectionAsync(userId, Context.ConnectionId);
+                _logger.LogInformation("User {UserId} disconnected with connection {ConnectionId}", userId, Context.ConnectionId);
             }
-            else
-            {
-                _logger.LogWarning("Connection {ConnectionId} disconnected without a mapped user. Error: {Error}",
-                    connectionId, exception?.Message);
-            }
-
             await base.OnDisconnectedAsync(exception);
         }
+
+        public async Task JoinChatGroup(Guid chatId)
+        {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            try
+            {
+                if (await _chatService.IsUserParticipantAsync(chatId, userId))
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, $"Chat_{chatId}");
+                    _logger.LogInformation("User {UserId} joined chat group {ChatId}", userId, chatId);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "شما عضو این چت نیستید");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error joining chat group {ChatId} for user {UserId}", chatId, userId);
+                await Clients.Caller.SendAsync("Error", "خطا در اتصال به چت");
+            }
+        }
+
+
+        public async Task LeaveChatGroup(Guid chatId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Chat_{chatId}");
+            var userId = GetUserId();
+            _logger.LogInformation("User {UserId} left chat group {ChatId}", userId, chatId);
+        }
+
+
+        public async Task DeleteMessage(int messageId)
+        {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            try
+            {
+                var deletedMessage = await _chatService.DeleteMessageAsync(messageId, userId);
+                if (deletedMessage != null)
+                {
+                    await _chatService.BroadcastMessageUpdateAsync(deletedMessage);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "شما اجازه حذف این پیام را ندارید");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting message {MessageId}", messageId);
+                await Clients.Caller.SendAsync("Error", "خطا در حذف پیام");
+            }
+        }
+
 
         public async Task SendToChat(Guid chatId, string messageContent, string correlationId)
         {
@@ -180,39 +216,26 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-        // ✅ تصحیح نام متد از UserTyping به NotifyTyping
         public async Task NotifyTyping(Guid chatId, bool isTyping)
         {
-            var typingUserId = GetUserIdFromContext();
-            if (!typingUserId.HasValue)
-                return;
+            var userId = GetUserId();
+            if (userId <= 0) return;
 
             try
             {
-                // بررسی عضویت کاربر در چت
-                if (await _chatService.IsUserParticipantAsync(chatId, typingUserId.Value))
+                if (await _chatService.IsUserParticipantAsync(chatId, userId))
                 {
-                    // ارسال اطلاع‌رسانی تایپ کردن به سایر اعضای گروه
-                    await Clients.OthersInGroup(chatId.ToString()).SendAsync(
-                        "UserTyping",
-                        chatId,
-                        typingUserId.Value,
-                        isTyping
-                    );
-
-                    _logger.LogDebug("User {UserId} typing status ({IsTyping}) sent to participants of chat {ChatId}",
-                        typingUserId.Value, isTyping, chatId);
-                }
-                else
-                {
-                    _logger.LogWarning("User {UserId} attempted to send typing status to chat {ChatId} without being a participant",
-                        typingUserId.Value, chatId);
+                    await Clients.OthersInGroup($"Chat_{chatId}").SendAsync("UserTyping", new
+                    {
+                        ChatId = chatId,
+                        UserId = userId,
+                        IsTyping = isTyping
+                    });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error broadcasting typing status for User {UserId} in chat {ChatId}",
-                    typingUserId.Value, chatId);
+                _logger.LogError(ex, "Error notifying typing for user {UserId} in chat {ChatId}", userId, chatId);
             }
         }
 
@@ -287,15 +310,15 @@ namespace Solvix.Server.API.Hubs
 
         public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds)
         {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
             try
             {
-                var userId = GetUserId();
-                if (userId <= 0)
-                {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
-                    return;
-                }
-
                 await _chatService.MarkMultipleMessagesAsReadAsync(messageIds, userId);
 
                 // Notify other participants about read status
@@ -516,6 +539,16 @@ namespace Solvix.Server.API.Hubs
             {
                 _logger.LogError(ex, "Error notifying user status change for user {UserId}", userId);
             }
+        }
+
+        private long GetUserId()
+        {
+            var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && long.TryParse(userIdClaim.Value, out long userId))
+            {
+                return userId;
+            }
+            return 0;
         }
     }
 }

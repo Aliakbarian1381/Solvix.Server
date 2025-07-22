@@ -4,7 +4,6 @@ namespace Solvix.Server.Core.Entities
 {
     public class UserContact
     {
-        [Key]
         public long Id { get; set; }
 
         public long OwnerUserId { get; set; }

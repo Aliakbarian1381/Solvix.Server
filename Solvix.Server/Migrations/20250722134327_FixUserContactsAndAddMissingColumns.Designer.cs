@@ -12,8 +12,8 @@ using Solvix.Server.Data;
 namespace Solvix.Server.Migrations
 {
     [DbContext(typeof(ChatDbContext))]
-    [Migration("20250718181436_AddGroupManagementFeatures")]
-    partial class AddGroupManagementFeatures
+    [Migration("20250722134327_FixUserContactsAndAddMissingColumns")]
+    partial class FixUserContactsAndAddMissingColumns
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

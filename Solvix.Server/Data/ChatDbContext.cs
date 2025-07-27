@@ -39,14 +39,25 @@ namespace Solvix.Server.Data
                     .WithOne(e => e.Chat)
                     .HasForeignKey(e => e.ChatId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.GroupMembers)
+                    .WithOne(e => e.Chat)
+                    .HasForeignKey(e => e.ChatId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.GroupSettings)
+                    .WithOne(e => e.Chat)
+                    .HasForeignKey<GroupSettings>(e => e.ChatId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Message Configuration
+            // Message Configuration - ✅ اصلاح شد
             modelBuilder.Entity<Message>(entity =>
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.SentAt).HasDefaultValueSql("GETUTCDATE()");
 
+                // ✅ تنها relationship درست با Sender
                 entity.HasOne(e => e.Sender)
                     .WithMany(e => e.SentMessages)
                     .HasForeignKey(e => e.SenderId)
@@ -128,11 +139,11 @@ namespace Solvix.Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // UserContact Configuration
+            // UserContact Configuration - ✅ با توجه به ساختار موجود database
             modelBuilder.Entity<UserContact>(entity =>
             {
-                entity.HasKey(e => e.Id);
-                entity.HasIndex(e => new { e.OwnerUserId, e.ContactUserId }).IsUnique();
+                // طبق ModelSnapshot فعلی، composite key داریم
+                entity.HasKey(e => new { e.OwnerUserId, e.ContactUserId });
 
                 entity.HasOne(e => e.OwnerUser)
                     .WithMany()
@@ -148,7 +159,8 @@ namespace Solvix.Server.Data
             // UserConnection Configuration
             modelBuilder.Entity<UserConnection>(entity =>
             {
-                entity.HasKey(e => e.ConnectionId);
+                entity.HasKey(e => e.ConnectionId); // ✅ اصلاح شد - ConnectionId primary key است
+                entity.HasIndex(e => e.UserId);
 
                 entity.HasOne(e => e.User)
                     .WithMany(e => e.Connections)
@@ -156,9 +168,17 @@ namespace Solvix.Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // AppUser Configuration
-            modelBuilder.Entity<AppUser>().ToTable("Users");
-            modelBuilder.Entity<AppRole>().ToTable("Roles");
+            // Identity Tables Configuration
+            modelBuilder.Entity<AppUser>(entity =>
+            {
+                entity.ToTable("Users");
+                // ✅ بدون relationship اضافی که باعث AppUserId میشد
+            });
+
+            modelBuilder.Entity<AppRole>(entity =>
+            {
+                entity.ToTable("Roles");
+            });
         }
     }
 }

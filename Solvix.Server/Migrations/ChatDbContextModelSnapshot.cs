@@ -308,7 +308,7 @@ namespace Solvix.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Chats");
+                    b.ToTable("Chats", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.GroupMember", b =>
@@ -338,7 +338,7 @@ namespace Solvix.Server.Migrations
                     b.HasIndex("ChatId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("GroupMembers");
+                    b.ToTable("GroupMembers", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.GroupSettings", b =>
@@ -381,7 +381,7 @@ namespace Solvix.Server.Migrations
                     b.HasIndex("ChatId")
                         .IsUnique();
 
-                    b.ToTable("GroupSettings");
+                    b.ToTable("GroupSettings", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.Message", b =>
@@ -436,7 +436,7 @@ namespace Solvix.Server.Migrations
 
                     b.HasIndex("SenderId");
 
-                    b.ToTable("Messages");
+                    b.ToTable("Messages", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.MessageReadStatus", b =>
@@ -463,7 +463,7 @@ namespace Solvix.Server.Migrations
                     b.HasIndex("MessageId", "ReaderId")
                         .IsUnique();
 
-                    b.ToTable("MessageReadStatuses");
+                    b.ToTable("MessageReadStatuses", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.Participant", b =>
@@ -497,7 +497,7 @@ namespace Solvix.Server.Migrations
                     b.HasIndex("ChatId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("Participants");
+                    b.ToTable("Participants", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.UserConnection", b =>
@@ -515,7 +515,7 @@ namespace Solvix.Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserConnections");
+                    b.ToTable("UserConnections", (string)null);
                 });
 
             modelBuilder.Entity("Solvix.Server.Core.Entities.UserContact", b =>
@@ -554,7 +554,7 @@ namespace Solvix.Server.Migrations
                     b.HasIndex("OwnerUserId", "ContactUserId")
                         .IsUnique();
 
-                    b.ToTable("UserContacts");
+                    b.ToTable("UserContacts", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<long>", b =>

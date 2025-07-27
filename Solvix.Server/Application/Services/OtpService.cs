@@ -10,11 +10,11 @@ namespace Solvix.Server.Application.Services
         private readonly ILogger<OtpService> _logger;
         private readonly IMemoryCache _cache;
         private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
+        private readonly string _apiKey; // ✅ اصلاح CS8618
 
         // پیشوند کلید کش برای کدهای OTP
         private const string OTP_CACHE_KEY_PREFIX = "OTP_";
-        // زمان انقضای کد OTP (5 دقیقه)
+        // زمان انقضای کد OTP (2 دقیقه)
         private readonly TimeSpan _otpExpiration = TimeSpan.FromMinutes(2);
 
         public OtpService(ILogger<OtpService> logger, IMemoryCache cache, IHttpClientFactory httpClientFactory, IConfiguration configuration)
@@ -22,7 +22,8 @@ namespace Solvix.Server.Application.Services
             _logger = logger;
             _cache = cache;
             _httpClient = httpClientFactory.CreateClient("OtpClient");
-            _apiKey = configuration["SmsService:ApiKey"];
+            // ✅ اصلاح CS8601 - با null check
+            _apiKey = configuration["SmsService:ApiKey"] ?? throw new InvalidOperationException("SmsService:ApiKey not configured");
         }
 
         public async Task<string> GenerateOtpAsync(string phoneNumber)
@@ -41,23 +42,23 @@ namespace Solvix.Server.Application.Services
             return otpCode;
         }
 
-        public async Task<bool> ValidateOtpAsync(string phoneNumber, string otpCode)
+        public Task<bool> ValidateOtpAsync(string phoneNumber, string otpCode)
         {
             var cacheKey = $"{OTP_CACHE_KEY_PREFIX}{phoneNumber}";
 
-            if (_cache.TryGetValue(cacheKey, out string storedOtp))
+            if (_cache.TryGetValue(cacheKey, out object? storedOtpObj) && storedOtpObj is string storedOtp)
             {
                 // اگر کد OTP صحیح باشد، آن را از کش حذف می‌کنیم (یکبار مصرف)
                 if (storedOtp == otpCode)
                 {
                     _cache.Remove(cacheKey);
                     _logger.LogInformation("کد OTP برای شماره {PhoneNumber} با موفقیت تایید شد", phoneNumber);
-                    return true;
+                    return Task.FromResult(true);
                 }
             }
 
             _logger.LogWarning("کد OTP نامعتبر برای شماره {PhoneNumber}", phoneNumber);
-            return false;
+            return Task.FromResult(false);
         }
 
         public async Task<bool> SendOtpAsync(string phoneNumber, string otpCode)

@@ -2,6 +2,6 @@
 {
     public class FcmTokenDto
     {
-        public string Token { get; set; }
+        public required string Token { get; set; }
     }
 }

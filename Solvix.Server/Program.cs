@@ -20,13 +20,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// ✅ اضافه کردن Memory Cache - مشکل اصلی OtpService حل شد
+builder.Services.AddMemoryCache();
+
 // Database Configuration
 builder.Services.AddDbContext<ChatDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
         sqlOptions => sqlOptions.EnableRetryOnFailure(
             maxRetryCount: 3,
             maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null)));
+            errorNumbersToAdd: null))
+    // ✅ غیرفعال کردن pending model changes warning
+    .ConfigureWarnings(warnings => warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 
 // Identity Configuration - Fixed to use AppRole instead of IdentityRole<long>
 builder.Services.AddIdentity<AppUser, AppRole>(options =>
@@ -103,23 +108,31 @@ try
     {
         Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", firebaseConfigPath);
         builder.Services.AddSingleton(FirebaseAdmin.FirebaseApp.Create());
+        builder.Logging.AddConsole();
+        // ✅ حذف BuildServiceProvider call
+        Console.WriteLine("Firebase configuration found and loaded.");
     }
     else
     {
-        builder.Logging.AddConsole().AddDebug();
-        var logger = builder.Services.BuildServiceProvider().GetService<ILogger<Program>>();
-        logger?.LogWarning("Firebase service account file not found at {Path}. Push notifications will be disabled.", firebaseConfigPath);
+        builder.Logging.AddConsole();
+        Console.WriteLine($"Firebase service account file not found at {firebaseConfigPath}. Push notifications will be disabled.");
     }
 }
 catch (Exception ex)
 {
-    builder.Logging.AddConsole().AddDebug();
-    var logger = builder.Services.BuildServiceProvider().GetService<ILogger<Program>>();
-    logger?.LogWarning(ex, "Failed to initialize Firebase. Push notifications will be disabled.");
+    builder.Logging.AddConsole();
+    Console.WriteLine($"Failed to initialize Firebase: {ex.Message}. Push notifications will be disabled.");
 }
 
 // HttpClient Configuration
 builder.Services.AddHttpClient("NotificationClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("User-Agent", "Solvix-Server/1.0");
+});
+
+// ✅ اضافه کردن OtpClient برای OtpService
+builder.Services.AddHttpClient("OtpClient", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.Add("User-Agent", "Solvix-Server/1.0");

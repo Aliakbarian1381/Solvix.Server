@@ -46,12 +46,11 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-
         public async Task<IEnumerable<AppUser>> FindUsersByPhoneNumbersAsync(IEnumerable<string> phoneNumbers)
         {
-            var normalizedPhoneNumbers = phoneNumbers.Select(p => p.ToLower()).ToList();
+            var normalizedPhoneNumbers = phoneNumbers.Where(p => p != null).Select(p => p.ToLower()).ToList(); // ✅ اصلاح CS8604
             return await _chatDbContext.Users
-                                 .Where(u => normalizedPhoneNumbers.Contains(u.PhoneNumber))
+                                 .Where(u => u.PhoneNumber != null && normalizedPhoneNumbers.Contains(u.PhoneNumber.ToLower()))
                                  .ToListAsync();
         }
     }

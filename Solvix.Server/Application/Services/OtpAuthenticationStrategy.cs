@@ -21,7 +21,7 @@ namespace Solvix.Server.Application.Services
             if (credentials is not OtpVerifyDto otpDto) return null;
 
             var user = await _userManager.FindByNameAsync(otpDto.PhoneNumber);
-            if (user == null) return null;
+            if (user?.PhoneNumber == null) return null; // ✅ اصلاح CS8604
 
             var isOtpValid = await _otpService.ValidateOtpAsync(user.PhoneNumber, otpDto.OtpCode);
             return isOtpValid ? user : null;

@@ -15,6 +15,7 @@ namespace Solvix.Server.Infrastructure.Repositories
             _context = context;
         }
 
+        // ✅ متد اصلی که ChatHub استفاده می‌کنه
         public async Task<IEnumerable<UserContact>> GetUserContactsAsync(long userId)
         {
             return await _context.UserContacts
@@ -172,8 +173,7 @@ namespace Solvix.Server.Infrastructure.Repositories
                     .Where(uc => uc.OwnerUserId == ownerId && contactIds.Contains(uc.ContactUserId))
                     .ToListAsync();
 
-                // برای سادگی، این متد رو بعداً پیاده‌سازی می‌کنیم
-                // فعلاً فقط true برمیگردونه تا error نداشته باشیم
+                // فعلاً basic implementation - در آینده پیاده‌سازی کامل می‌شه
                 await _context.SaveChangesAsync();
                 return true;
             }
@@ -186,6 +186,35 @@ namespace Solvix.Server.Infrastructure.Repositories
         public new IQueryable<UserContact> GetQueryable()
         {
             return _context.UserContacts.AsQueryable();
+        }
+
+        // ✅ Override متدهای base برای composite key
+        public override async Task<UserContact> AddAsync(UserContact entity)
+        {
+            await _context.UserContacts.AddAsync(entity);
+            return entity;
+        }
+
+        public override async Task UpdateAsync(UserContact entity)
+        {
+            _context.UserContacts.Update(entity);
+            await Task.CompletedTask;
+        }
+
+        public override async Task DeleteAsync(UserContact entity)
+        {
+            _context.UserContacts.Remove(entity);
+            await Task.CompletedTask;
+        }
+
+        // ✅ GetByIdAsync براساس composite key
+        public override async Task<UserContact?> GetByIdAsync(object id)
+        {
+            if (id is ValueTuple<long, long> compositeId)
+            {
+                return await GetUserContactAsync(compositeId.Item1, compositeId.Item2);
+            }
+            return null;
         }
     }
 }

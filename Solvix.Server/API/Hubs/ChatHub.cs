@@ -500,7 +500,6 @@ namespace Solvix.Server.API.Hubs
         {
             try
             {
-                // Find user's contacts and notify them
                 var contacts = await _unitOfWork.UserContactRepository.GetUserContactsAsync(userId);
                 var contactIds = contacts.Select(c => c.ContactUserId).ToList();
 
@@ -510,7 +509,7 @@ namespace Solvix.Server.API.Hubs
                     {
                         userId = userId,
                         isOnline = isOnline,
-                        lastSeen = !isOnline ? DateTime.UtcNow : null
+                        lastSeen = !isOnline ? (DateTime?)DateTime.UtcNow : null
                     });
                 }
 

@@ -8,7 +8,7 @@ namespace Solvix.Server.Infrastructure.Repositories
 {
     public class MessageRepository : Repository<Message>, IMessageRepository
     {
-        private readonly ChatDbContext _context;
+        private readonly new ChatDbContext _context; // ✅ اصلاح warning CS0108
 
         public MessageRepository(ChatDbContext context) : base(context)
         {
@@ -86,69 +86,74 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        // ✅ متدهای مفقود از IMessageRepository اضافه شدن
         public async Task<Message?> GetByIdWithDetailsAsync(int messageId)
         {
             return await _context.Messages
                 .Include(m => m.Sender)
-                .Include(m => m.Chat)
                 .Include(m => m.ReadStatuses)
                     .ThenInclude(rs => rs.Reader)
+                .Include(m => m.Chat)
                 .FirstOrDefaultAsync(m => m.Id == messageId);
         }
 
         public async Task MarkAsReadAsync(int messageId, long readerId)
         {
-            // Check if message exists and is not sent by the reader
             var message = await _context.Messages
-                .FirstOrDefaultAsync(m => m.Id == messageId && m.SenderId != readerId);
+                .Include(m => m.ReadStatuses)
+                .FirstOrDefaultAsync(m => m.Id == messageId);
 
-            if (message == null)
+            if (message == null || message.SenderId == readerId)
                 return;
 
-            // Check if already marked as read
-            var existingStatus = await _context.MessageReadStatuses
-                .FirstOrDefaultAsync(mrs => mrs.MessageId == messageId && mrs.ReaderId == readerId);
+            var existingReadStatus = message.ReadStatuses
+                .FirstOrDefault(rs => rs.ReaderId == readerId);
 
-            if (existingStatus == null)
+            if (existingReadStatus == null)
             {
-                var readStatus = new MessageReadStatus
+                message.ReadStatuses.Add(new MessageReadStatus
                 {
                     MessageId = messageId,
                     ReaderId = readerId,
                     ReadAt = DateTime.UtcNow
-                };
-                await _context.MessageReadStatuses.AddAsync(readStatus);
+                });
+
+                await _context.SaveChangesAsync();
             }
         }
 
         public async Task MarkMultipleAsReadAsync(List<int> messageIds, long readerId)
         {
-            // Get messages that are not sent by the reader and not already read
-            var messagesToMark = await _context.Messages
+            var messages = await _context.Messages
+                .Include(m => m.ReadStatuses)
                 .Where(m => messageIds.Contains(m.Id) && m.SenderId != readerId)
-                .Where(m => !m.ReadStatuses.Any(rs => rs.ReaderId == readerId))
-                .Select(m => m.Id)
                 .ToListAsync();
 
-            if (messagesToMark.Count == 0)
-                return;
-
-            var readStatuses = messagesToMark.Select(messageId => new MessageReadStatus
+            foreach (var message in messages)
             {
-                MessageId = messageId,
-                ReaderId = readerId,
-                ReadAt = DateTime.UtcNow
-            }).ToList();
+                var existingReadStatus = message.ReadStatuses
+                    .FirstOrDefault(rs => rs.ReaderId == readerId);
 
-            await _context.MessageReadStatuses.AddRangeAsync(readStatuses);
+                if (existingReadStatus == null)
+                {
+                    message.ReadStatuses.Add(new MessageReadStatus
+                    {
+                        MessageId = message.Id,
+                        ReaderId = readerId,
+                        ReadAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
         }
 
         public async Task<int> GetUnreadCountAsync(Guid chatId, long userId)
         {
             return await _context.Messages
-                .Where(m => m.ChatId == chatId && m.SenderId != userId && !m.IsDeleted)
-                .Where(m => !m.ReadStatuses.Any(rs => rs.ReaderId == userId))
-                .CountAsync();
+                .CountAsync(m => m.ChatId == chatId &&
+                               m.SenderId != userId &&
+                               !m.ReadStatuses.Any(rs => rs.ReaderId == userId));
         }
 
         public async Task DeleteAllMessagesAsync(Guid chatId)
@@ -158,6 +163,125 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ToListAsync();
 
             _context.Messages.RemoveRange(messages);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<List<Message>> GetMessagesAfterAsync(Guid chatId, DateTime afterTime, int take = 50)
+        {
+            return await _context.Messages
+                .Include(m => m.Sender)
+                .Include(m => m.ReadStatuses)
+                    .ThenInclude(rs => rs.Reader)
+                .Where(m => m.ChatId == chatId && m.SentAt > afterTime)
+                .OrderBy(m => m.SentAt)
+                .Take(take)
+                .ToListAsync();
+        }
+
+        public async Task<List<Message>> GetUnreadMessagesAsync(Guid chatId, long userId)
+        {
+            return await _context.Messages
+                .Include(m => m.Sender)
+                .Include(m => m.ReadStatuses)
+                    .ThenInclude(rs => rs.Reader)
+                .Where(m => m.ChatId == chatId &&
+                           m.SenderId != userId &&
+                           !m.ReadStatuses.Any(rs => rs.ReaderId == userId))
+                .OrderBy(m => m.SentAt)
+                .ToListAsync();
+        }
+
+        public async Task<int> GetUnreadMessagesCountAsync(Guid chatId, long userId)
+        {
+            return await _context.Messages
+                .CountAsync(m => m.ChatId == chatId &&
+                               m.SenderId != userId &&
+                               !m.ReadStatuses.Any(rs => rs.ReaderId == userId));
+        }
+
+        public async Task<Message?> GetLastMessageAsync(Guid chatId)
+        {
+            return await _context.Messages
+                .Include(m => m.Sender)
+                .Where(m => m.ChatId == chatId)
+                .OrderByDescending(m => m.SentAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<List<Message>> SearchMessagesAsync(Guid chatId, string searchTerm, int skip = 0, int take = 20)
+        {
+            return await _context.Messages
+                .Include(m => m.Sender)
+                .Where(m => m.ChatId == chatId &&
+                           m.Content.Contains(searchTerm))
+                .OrderByDescending(m => m.SentAt)
+                .Skip(skip)
+                .Take(take)
+                .ToListAsync();
+        }
+
+        public async Task<bool> MarkMessageAsReadAsync(int messageId, long readerId)
+        {
+            var message = await _context.Messages
+                .Include(m => m.ReadStatuses)
+                .FirstOrDefaultAsync(m => m.Id == messageId);
+
+            if (message == null || message.SenderId == readerId)
+                return false;
+
+            var existingReadStatus = message.ReadStatuses
+                .FirstOrDefault(rs => rs.ReaderId == readerId);
+
+            if (existingReadStatus == null)
+            {
+                message.ReadStatuses.Add(new MessageReadStatus
+                {
+                    MessageId = messageId,
+                    ReaderId = readerId,
+                    ReadAt = DateTime.UtcNow
+                });
+
+                await _context.SaveChangesAsync();
+            }
+
+            return true;
+        }
+
+        public async Task<bool> DeleteMessageAsync(int messageId, long userId)
+        {
+            var message = await _context.Messages.FindAsync(messageId);
+            if (message == null || message.SenderId != userId)
+                return false;
+
+            message.IsDeleted = true;
+            message.Content = "[پیام حذف شده]";
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> EditMessageAsync(int messageId, string newContent, long userId)
+        {
+            var message = await _context.Messages.FindAsync(messageId);
+            if (message == null || message.SenderId != userId)
+                return false;
+
+            message.Content = newContent;
+            message.IsEdited = true;
+            message.EditedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<List<Message>> GetUserMessagesAsync(long userId, int skip = 0, int take = 50)
+        {
+            return await _context.Messages
+                .Include(m => m.Sender)
+                .Include(m => m.Chat)
+                .Where(m => m.SenderId == userId)
+                .OrderByDescending(m => m.SentAt)
+                .Skip(skip)
+                .Take(take)
+                .ToListAsync();
         }
     }
 }

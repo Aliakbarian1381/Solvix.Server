@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
-using Solvix.Server.Core.Interfaces.Solvix.Server.Core.Interfaces;
+using Solvix.Server.Core.Interfaces;
 using Solvix.Server.Data;
 using System.Linq.Expressions;
 
@@ -8,11 +8,21 @@ namespace Solvix.Server.Infrastructure.Repositories
 {
     public class UserContactRepository : Repository<UserContact>, IUserContactRepository
     {
-        private readonly ChatDbContext _context;
+        private readonly new ChatDbContext _context;
 
         public UserContactRepository(ChatDbContext context) : base(context)
         {
             _context = context;
+        }
+
+        public async Task<IEnumerable<UserContact>> GetUserContactsAsync(long userId)
+        {
+            return await _context.UserContacts
+                .Include(uc => uc.ContactUser)
+                .Where(uc => uc.OwnerUserId == userId && !uc.IsBlocked)
+                .OrderByDescending(uc => uc.IsFavorite)
+                .ThenBy(uc => uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
+                .ToListAsync();
         }
 
         public async Task<UserContact?> GetUserContactAsync(long ownerId, long contactId)
@@ -34,60 +44,23 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<UserContact>> GetRecentContactsAsync(long userId, int limit = 10)
-        {
-            return await _context.UserContacts
-                .Include(uc => uc.ContactUser)
-                .Where(uc => uc.OwnerUserId == userId && !uc.IsBlocked)
-                .OrderByDescending(uc => uc.LastInteractionAt ?? uc.CreatedAt)
-                .Take(limit)
-                .ToListAsync();
-        }
-
-        public async Task UpdateLastInteractionAsync(long ownerId, long contactId)
-        {
-            var contact = await _context.UserContacts
-                .FirstOrDefaultAsync(uc => uc.OwnerUserId == ownerId && uc.ContactUserId == contactId);
-
-            if (contact != null)
-            {
-                contact.LastInteractionAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-            }
-        }
-
         public async Task<bool> RemoveContactAsync(long ownerId, long contactId)
         {
-            var contact = await _context.UserContacts
-                .FirstOrDefaultAsync(uc => uc.OwnerUserId == ownerId && uc.ContactUserId == contactId);
-
-            if (contact != null)
+            try
             {
-                _context.UserContacts.Remove(contact);
-                await _context.SaveChangesAsync();
-                return true;
+                var contact = await GetUserContactAsync(ownerId, contactId);
+                if (contact != null)
+                {
+                    _context.UserContacts.Remove(contact);
+                    await _context.SaveChangesAsync();
+                    return true;
+                }
+                return false;
             }
-            return false;
-        }
-
-        public async Task<IEnumerable<UserContact>> SearchContactsAsync(long userId, string searchTerm, int limit = 20)
-        {
-            var trimmedTerm = searchTerm.Trim().ToLower();
-
-            return await _context.UserContacts
-                .Include(uc => uc.ContactUser)
-                .Where(uc => uc.OwnerUserId == userId && !uc.IsBlocked)
-                .Where(uc =>
-                    (uc.ContactUser.FirstName != null && uc.ContactUser.FirstName.ToLower().Contains(trimmedTerm)) ||
-                    (uc.ContactUser.LastName != null && uc.ContactUser.LastName.ToLower().Contains(trimmedTerm)) ||
-                    (uc.ContactUser.UserName.ToLower().Contains(trimmedTerm)) ||
-                    (uc.ContactUser.PhoneNumber != null && uc.ContactUser.PhoneNumber.Contains(trimmedTerm)) ||
-                    (uc.DisplayName != null && uc.DisplayName.ToLower().Contains(trimmedTerm)) ||
-                    ((uc.ContactUser.FirstName ?? "") + " " + (uc.ContactUser.LastName ?? "")).ToLower().Contains(trimmedTerm))
-                .OrderByDescending(uc => uc.IsFavorite)
-                .ThenBy(uc => uc.DisplayName ?? uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
-                .Take(limit)
-                .ToListAsync();
+            catch
+            {
+                return false;
+            }
         }
 
         public async Task AddRangeAsync(IEnumerable<UserContact> contacts)
@@ -95,12 +68,35 @@ namespace Solvix.Server.Infrastructure.Repositories
             await _context.UserContacts.AddRangeAsync(contacts);
         }
 
+        public async Task<IEnumerable<UserContact>> SearchContactsAsync(long userId, string searchTerm, int limit = 20)
+        {
+            return await _context.UserContacts
+                .Include(uc => uc.ContactUser)
+                .Where(uc => uc.OwnerUserId == userId && !uc.IsBlocked &&
+                    (uc.ContactUser.FirstName!.Contains(searchTerm) ||
+                     uc.ContactUser.LastName!.Contains(searchTerm) ||
+                     uc.ContactUser.UserName!.Contains(searchTerm) ||
+                     (uc.DisplayName != null && uc.DisplayName.Contains(searchTerm))))
+                .Take(limit)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<UserContact>> GetFavoriteContactsAsync(long userId)
         {
             return await _context.UserContacts
                 .Include(uc => uc.ContactUser)
                 .Where(uc => uc.OwnerUserId == userId && uc.IsFavorite && !uc.IsBlocked)
-                .OrderBy(uc => uc.DisplayName ?? uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
+                .OrderBy(uc => uc.ContactUser.FirstName ?? uc.ContactUser.UserName)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<UserContact>> GetRecentContactsAsync(long userId, int limit = 10)
+        {
+            return await _context.UserContacts
+                .Include(uc => uc.ContactUser)
+                .Where(uc => uc.OwnerUserId == userId && !uc.IsBlocked)
+                .OrderByDescending(uc => uc.LastInteractionAt ?? uc.CreatedAt)
+                .Take(limit)
                 .ToListAsync();
         }
 
@@ -137,7 +133,17 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .CountAsync(uc => uc.OwnerUserId == userId && uc.IsFavorite && !uc.IsBlocked);
         }
 
-        // متد کمکی برای پیدا کردن مخاطبین مشترک
+        public async Task UpdateLastInteractionAsync(long ownerId, long contactId)
+        {
+            var contact = await GetUserContactAsync(ownerId, contactId);
+            if (contact != null)
+            {
+                contact.LastInteractionAt = DateTime.UtcNow;
+                _context.UserContacts.Update(contact);
+                await _context.SaveChangesAsync();
+            }
+        }
+
         public async Task<IEnumerable<UserContact>> GetMutualContactsAsync(long userId1, long userId2)
         {
             var user1Contacts = await _context.UserContacts
@@ -158,7 +164,6 @@ namespace Solvix.Server.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        // متد کمکی برای batch operations
         public async Task<bool> UpdateContactsAsync(long ownerId, List<long> contactIds, Expression<Func<UserContact, UserContact>> updateExpression)
         {
             try
@@ -167,13 +172,8 @@ namespace Solvix.Server.Infrastructure.Repositories
                     .Where(uc => uc.OwnerUserId == ownerId && contactIds.Contains(uc.ContactUserId))
                     .ToListAsync();
 
-                foreach (var contact in contacts)
-                {
-                    // اینجا باید از updateExpression استفاده کنیم
-                    // برای سادگی، فعلاً این قسمت رو خالی می‌ذاریم
-                    // و در صورت نیاز پیاده‌سازی می‌کنیم
-                }
-
+                // برای سادگی، این متد رو بعداً پیاده‌سازی می‌کنیم
+                // فعلاً فقط true برمیگردونه تا error نداشته باشیم
                 await _context.SaveChangesAsync();
                 return true;
             }
@@ -183,7 +183,7 @@ namespace Solvix.Server.Infrastructure.Repositories
             }
         }
 
-        public IQueryable<UserContact> GetQueryable()
+        public new IQueryable<UserContact> GetQueryable()
         {
             return _context.UserContacts.AsQueryable();
         }

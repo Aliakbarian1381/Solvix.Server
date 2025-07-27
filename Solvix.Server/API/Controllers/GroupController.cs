@@ -253,34 +253,34 @@ namespace Solvix.Server.API.Controllers
         }
 
         [HttpGet("public")]
-        public async Task<IActionResult> GetPublicGroups([FromQuery] int skip = 0, [FromQuery] int take = 20)
+        public Task<IActionResult> GetPublicGroups([FromQuery] int skip = 0, [FromQuery] int take = 20)
         {
             try
             {
                 // This would be implemented in ChatRepository
                 // For now, return empty list
-                return Ok(new List<object>());
+                return Task.FromResult<IActionResult>(Ok(new List<object>()));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting public groups");
-                return ServerError("خطا در دریافت گروه‌های عمومی");
+                return Task.FromResult<IActionResult>(ServerError("خطا در دریافت گروه‌های عمومی"));
             }
         }
 
         [HttpPost("join/{joinLink}")]
-        public async Task<IActionResult> JoinGroupByLink(string joinLink)
+        public Task<IActionResult> JoinGroupByLink(string joinLink)
         {
             try
             {
                 // This would need implementation in GroupManagementService
                 // For now, return not implemented
-                return BadRequest("این قابلیت هنوز پیاده‌سازی نشده است");
+                return Task.FromResult<IActionResult>(BadRequest("این قابلیت هنوز پیاده‌سازی نشده است"));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error joining group by link {JoinLink}", joinLink);
-                return ServerError("خطا در پیوستن به گروه");
+                return Task.FromResult<IActionResult>(ServerError("خطا در پیوستن به گروه"));
             }
         }
     }

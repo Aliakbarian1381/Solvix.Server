@@ -1,5 +1,4 @@
 ﻿using Solvix.Server.Core.Interfaces;
-using Solvix.Server.Core.Interfaces.Solvix.Server.Core.Interfaces;
 using Solvix.Server.Data;
 
 namespace Solvix.Server.Infrastructure.Repositories

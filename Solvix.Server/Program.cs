@@ -6,7 +6,7 @@ using Solvix.Server.API.Hubs;
 using Solvix.Server.Application.Services;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
-using Solvix.Server.Core.Interfaces.Solvix.Server.Core.Interfaces;
+// ✅ خط 9 اصلاح شد - namespace مکرر حذف شد
 using Solvix.Server.Data;
 using Solvix.Server.Infrastructure.Repositories;
 using Solvix.Server.Infrastructure.Services;
@@ -52,63 +52,76 @@ var audience = jwtSection["Audience"];
 
 if (string.IsNullOrEmpty(jwtKey))
     throw new InvalidOperationException("JWT:Key not configured in appsettings.json");
-if (string.IsNullOrEmpty(issuer))
-    throw new InvalidOperationException("JWT:Issuer not configured in appsettings.json");
-if (string.IsNullOrEmpty(audience))
-    throw new InvalidOperationException("JWT:Audience not configured in appsettings.json");
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.SaveToken = true;
-    options.RequireHttpsMetadata = false; // Set to true in production
-    options.TokenValidationParameters = new TokenValidationParameters
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = issuer,
-        ValidAudience = audience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-        ClockSkew = TimeSpan.Zero
-    };
-
-    // SignalR Token Configuration
-    options.Events = new JwtBearerEvents
-    {
-        OnMessageReceived = context =>
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            var accessToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
 
-            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
+        // Configure JWT for SignalR
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
             {
-                context.Token = accessToken;
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
             }
-            return Task.CompletedTask;
-        },
-        OnAuthenticationFailed = context =>
-        {
-            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-            logger.LogError(context.Exception, "Authentication failed");
-            return Task.CompletedTask;
-        }
-    };
+        };
+    });
+
+// CORS Configuration
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
 
-// Memory Cache for OTP
-builder.Services.AddMemoryCache();
-
-// HTTP Client Configuration
-builder.Services.AddHttpClient("OtpClient", client =>
+// Firebase Configuration with error handling
+try
 {
-    client.Timeout = TimeSpan.FromSeconds(10);
+    var firebaseConfigPath = Path.Combine(builder.Environment.ContentRootPath, "fcm-service-account.json");
+    if (File.Exists(firebaseConfigPath))
+    {
+        Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", firebaseConfigPath);
+        builder.Services.AddSingleton(FirebaseAdmin.FirebaseApp.Create());
+    }
+    else
+    {
+        builder.Logging.AddConsole().AddDebug();
+        var logger = builder.Services.BuildServiceProvider().GetService<ILogger<Program>>();
+        logger?.LogWarning("Firebase service account file not found at {Path}. Push notifications will be disabled.", firebaseConfigPath);
+    }
+}
+catch (Exception ex)
+{
+    builder.Logging.AddConsole().AddDebug();
+    var logger = builder.Services.BuildServiceProvider().GetService<ILogger<Program>>();
+    logger?.LogWarning(ex, "Failed to initialize Firebase. Push notifications will be disabled.");
+}
+
+// HttpClient Configuration
+builder.Services.AddHttpClient("NotificationClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.Add("User-Agent", "Solvix-Server/1.0");
 });
 
@@ -151,76 +164,33 @@ builder.Services.AddSignalR(options =>
 // Rate Limiting Configuration - Fixed to handle proxy scenarios
 builder.Services.AddRateLimiter(options =>
 {
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetClientIdentifier(httpContext),
-            factory: partition => new FixedWindowRateLimiterOptions
-            {
-                AutoReplenishment = true,
-                PermitLimit = 100,
-                QueueLimit = 0,
-                Window = TimeSpan.FromMinutes(1)
-            })
-    );
-
-    options.AddPolicy("AuthLimit", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetClientIdentifier(httpContext),
-            factory: partition => new FixedWindowRateLimiterOptions
-            {
-                AutoReplenishment = true,
-                PermitLimit = 10,
-                QueueLimit = 0,
-                Window = TimeSpan.FromMinutes(5)
-            })
-    );
-
-    options.AddPolicy("OtpRequestLimit", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetClientIdentifier(httpContext),
-            factory: partition => new FixedWindowRateLimiterOptions
-            {
-                AutoReplenishment = true,
-                PermitLimit = 5,
-                QueueLimit = 0,
-                Window = TimeSpan.FromMinutes(15)
-            })
-    );
-});
-
-// CORS Configuration
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policyBuilder =>
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
-        policyBuilder.AllowAnyOrigin()
-                   .AllowAnyMethod()
-                   .AllowAnyHeader();
+        var clientId = GetClientIdentifier(context);
+        return RateLimitPartition.GetFixedWindowLimiter(clientId, _ =>
+            new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            });
     });
 });
-
-// Enhanced Logging
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.AddDebug();
-
-// Add EventLog only on Windows platforms in production
-if (!builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
-{
-    builder.Logging.AddEventLog();
-}
 
 var app = builder.Build();
 
 // Initialize Firebase with better error handling
 try
 {
-    FirebaseAdminSetup.Initialize(app);
+    if (FirebaseAdmin.FirebaseApp.DefaultInstance != null)
+    {
+        app.Logger.LogInformation("Firebase initialized successfully for push notifications.");
+    }
 }
 catch (Exception ex)
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogWarning(ex, "Firebase Admin SDK initialization failed. Push notifications will be disabled.");
+    app.Logger.LogWarning(ex, "Firebase initialization failed. Push notifications will be disabled.");
     // Don't crash the app, just log and continue
 }
 

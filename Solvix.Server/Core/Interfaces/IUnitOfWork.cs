@@ -1,6 +1,4 @@
-﻿using Solvix.Server.Core.Interfaces.Solvix.Server.Core.Interfaces;
-
-namespace Solvix.Server.Core.Interfaces
+﻿namespace Solvix.Server.Core.Interfaces
 {
     public interface IUnitOfWork : IDisposable
     {

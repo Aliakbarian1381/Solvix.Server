@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// فایل: Infrastructure/Repositories/GroupSettingsRepository.cs
+using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
 using Solvix.Server.Data;
@@ -28,6 +29,7 @@ namespace Solvix.Server.Infrastructure.Repositories
         public async Task UpdateAsync(GroupSettings settings)
         {
             _context.GroupSettings.Update(settings);
+            await _context.SaveChangesAsync();
         }
 
         public async Task DeleteSettingsAsync(Guid chatId)
@@ -38,6 +40,7 @@ namespace Solvix.Server.Infrastructure.Repositories
             if (settings != null)
             {
                 _context.GroupSettings.Remove(settings);
+                await _context.SaveChangesAsync();
             }
         }
     }

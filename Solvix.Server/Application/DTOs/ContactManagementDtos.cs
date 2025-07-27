@@ -2,11 +2,6 @@
 
 namespace Solvix.Server.Application.DTOs
 {
-    public class FavoriteContactDto
-    {
-        [Required]
-        public bool IsFavorite { get; set; }
-    }
 
     public class BlockContactDto
     {

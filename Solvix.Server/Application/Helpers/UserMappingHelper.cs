@@ -1,7 +1,5 @@
 ﻿using Solvix.Server.Application.DTOs;
 using Solvix.Server.Core.Entities;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Solvix.Server.Application.Helpers
 {
@@ -39,6 +37,13 @@ namespace Solvix.Server.Application.Helpers
                              ? $"{message.Sender.FirstName} {message.Sender.LastName}".Trim()
                              : "کاربر نامشخص";
 
+            var readStatuses = message.ReadStatuses?.Select(rs => new MessageReadStatusDto
+            {
+                ReaderId = rs.ReaderId,
+                ReaderName = rs.Reader != null ? $"{rs.Reader.FirstName} {rs.Reader.LastName}".Trim() : "کاربر نامشخص",
+                ReadAt = rs.ReadAt
+            }).ToList() ?? new List<MessageReadStatusDto>();
+
             return new MessageDto
             {
                 Id = message.Id,
@@ -47,8 +52,7 @@ namespace Solvix.Server.Application.Helpers
                 SenderId = message.SenderId,
                 SenderName = senderName,
                 ChatId = message.ChatId,
-                IsRead = message.IsRead,
-                ReadAt = message.ReadAt,
+                ReadStatuses = readStatuses,
                 IsEdited = message.IsEdited,
                 EditedAt = message.EditedAt,
                 IsDeleted = message.IsDeleted
@@ -57,7 +61,10 @@ namespace Solvix.Server.Application.Helpers
 
         public static ChatDto MapToChatDto(Chat chat, long currentUserId, Dictionary<long, bool> onlineStatuses)
         {
-            if (chat == null) { throw new ArgumentNullException(nameof(chat)); }
+            if (chat == null)
+            {
+                throw new ArgumentNullException(nameof(chat));
+            }
 
             string? title = chat.Title;
 
@@ -73,8 +80,18 @@ namespace Solvix.Server.Application.Helpers
                 }
             }
 
-            var lastMessage = chat.Messages?.Where(m => !m.IsDeleted).OrderByDescending(m => m.SentAt).FirstOrDefault();
-            var unreadCount = chat.Messages?.Count(m => m.SenderId != currentUserId && !m.IsRead) ?? 0;
+            var lastMessage = chat.Messages?.Where(m => !m.IsDeleted)
+                                          .OrderByDescending(m => m.SentAt)
+                                          .FirstOrDefault();
+
+            // Fixed: Count unread messages using MessageReadStatus
+            var unreadCount = 0;
+            if (chat.Messages != null)
+            {
+                unreadCount = chat.Messages
+                    .Where(m => m.SenderId != currentUserId && !m.IsDeleted)
+                    .Count(m => !m.ReadStatuses.Any(rs => rs.ReaderId == currentUserId));
+            }
 
             return new ChatDto
             {

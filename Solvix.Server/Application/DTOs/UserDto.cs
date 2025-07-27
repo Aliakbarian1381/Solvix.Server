@@ -45,13 +45,11 @@ namespace Solvix.Server.Application.DTOs
             {
                 var name = DisplayNameOrUsername;
                 if (string.IsNullOrEmpty(name)) return "?";
-
                 var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 2)
                     return (parts[0][0].ToString() + parts[1][0].ToString()).ToUpper();
                 else if (parts.Length == 1)
                     return parts[0][0].ToString().ToUpper();
-
                 return "?";
             }
         }
@@ -62,13 +60,11 @@ namespace Solvix.Server.Application.DTOs
             {
                 if (IsOnline) return "آنلاین";
                 if (!LastActiveAt.HasValue) return "نامشخص";
-
                 var diff = DateTime.UtcNow - LastActiveAt.Value;
                 if (diff.TotalMinutes < 1) return "همین الان";
                 if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} دقیقه پیش";
                 if (diff.TotalHours < 24) return $"{(int)diff.TotalHours} ساعت پیش";
                 if (diff.TotalDays < 7) return $"{(int)diff.TotalDays} روز پیش";
-
                 return "خیلی وقت پیش";
             }
         }

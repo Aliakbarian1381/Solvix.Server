@@ -6,15 +6,9 @@
         public bool OnlyAdminsCanSendMessages { get; set; } = false;
         public bool OnlyAdminsCanAddMembers { get; set; } = false;
         public bool OnlyAdminsCanEditInfo { get; set; } = true;
-        public bool OnlyAdminsCanDeleteMessages { get; set; } = true;
+        public bool OnlyAdminsCanDeleteMessages { get; set; } = false;
         public bool AllowMemberToLeave { get; set; } = true;
         public bool IsPublic { get; set; } = false;
         public string? JoinLink { get; set; }
-
-        public bool OnlyAdminsCanEditGroupInfo
-        {
-            get => OnlyAdminsCanEditInfo;
-            set => OnlyAdminsCanEditInfo = value;
-        }
     }
 }

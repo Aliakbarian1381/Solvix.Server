@@ -19,7 +19,6 @@ namespace Solvix.Server.Data
         public DbSet<GroupSettings> GroupSettings { get; set; }
         public DbSet<UserConnection> UserConnections { get; set; }
 
-
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -40,27 +39,6 @@ namespace Solvix.Server.Data
                     .WithOne(e => e.Chat)
                     .HasForeignKey(e => e.ChatId)
                     .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasMany(e => e.GroupMembers)
-                    .WithOne(e => e.Chat)
-                    .HasForeignKey(e => e.ChatId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasOne(e => e.GroupSettings)
-                    .WithOne(e => e.Chat)
-                    .HasForeignKey<GroupSettings>(e => e.ChatId)
-                    .OnDelete(DeleteBehavior.Cascade);
-            });
-
-            modelBuilder.Entity<UserConnection>(entity =>
-            {
-                entity.HasKey(e => e.ConnectionId);
-                entity.HasIndex(e => e.UserId);
-
-                entity.HasOne(e => e.User)
-                    .WithMany(e => e.Connections)
-                    .HasForeignKey(e => e.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // Message Configuration
@@ -69,27 +47,26 @@ namespace Solvix.Server.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.SentAt).HasDefaultValueSql("GETUTCDATE()");
 
+                entity.HasOne(e => e.Sender)
+                    .WithMany(e => e.SentMessages)
+                    .HasForeignKey(e => e.SenderId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 entity.HasOne(e => e.Chat)
                     .WithMany(e => e.Messages)
                     .HasForeignKey(e => e.ChatId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(e => e.Sender)
-                    .WithMany()
-                    .HasForeignKey(e => e.SenderId)
-                    .OnDelete(DeleteBehavior.Restrict);
-
-                entity.HasMany(e => e.ReadStatuses)
-                    .WithOne(e => e.Message)
-                    .HasForeignKey(e => e.MessageId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                // Configure other properties
+                entity.Property(e => e.Content).IsRequired().HasMaxLength(5000);
+                entity.Property(e => e.IsEdited).HasDefaultValue(false);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
             });
 
             // MessageReadStatus Configuration
             modelBuilder.Entity<MessageReadStatus>(entity =>
             {
-                entity.HasKey(e => e.Id);
-                entity.HasIndex(e => new { e.MessageId, e.ReaderId }).IsUnique();
+                entity.HasKey(e => new { e.MessageId, e.ReaderId });
 
                 entity.HasOne(e => e.Message)
                     .WithMany(e => e.ReadStatuses)
@@ -134,6 +111,10 @@ namespace Solvix.Server.Data
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                // Configure enum
+                entity.Property(e => e.Role)
+                    .HasConversion<string>();
             });
 
             // GroupSettings Configuration
@@ -162,6 +143,17 @@ namespace Solvix.Server.Data
                     .WithMany()
                     .HasForeignKey(e => e.ContactUserId)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // UserConnection Configuration
+            modelBuilder.Entity<UserConnection>(entity =>
+            {
+                entity.HasKey(e => e.ConnectionId);
+
+                entity.HasOne(e => e.User)
+                    .WithMany(e => e.Connections)
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // AppUser Configuration

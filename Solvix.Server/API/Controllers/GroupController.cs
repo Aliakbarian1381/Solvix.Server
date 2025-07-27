@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Solvix.Server.Application.DTOs;
+using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
 
 namespace Solvix.Server.API.Controllers
@@ -129,15 +130,15 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return Forbidden("شما دسترسی اضافه کردن عضو ندارید");
+                    return Forbidden("شما دسترسی اضافه کردن عضو به گروه را ندارید");
                 }
 
-                return Ok(new { message = "اعضا با موفقیت اضافه شدند" });
+                return Ok(new { message = "اعضای جدید با موفقیت به گروه اضافه شدند" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding members to group {ChatId}", chatId);
-                return ServerError("خطا در اضافه کردن اعضا");
+                return ServerError("خطا در اضافه کردن اعضای جدید");
             }
         }
 
@@ -151,15 +152,15 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return Forbidden("شما دسترسی حذف عضو ندارید");
+                    return Forbidden("شما دسترسی حذف عضو از گروه را ندارید");
                 }
 
-                return Ok(new { message = "عضو با موفقیت حذف شد" });
+                return Ok(new { message = "عضو با موفقیت از گروه حذف شد" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error removing member {MemberId} from group {ChatId}", memberId, chatId);
-                return ServerError("خطا در حذف عضو");
+                return ServerError("خطا در حذف عضو از گروه");
             }
         }
 
@@ -173,14 +174,14 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return Forbidden("شما دسترسی تغییر نقش عضو ندارید");
+                    return Forbidden("شما دسترسی تغییر نقش اعضا را ندارید");
                 }
 
-                return Ok(new { message = "نقش عضو با موفقیت تغییر کرد" });
+                return Ok(new { message = "نقش عضو با موفقیت تغییر یافت" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating member role for {MemberId} in group {ChatId}", memberId, chatId);
+                _logger.LogError(ex, "Error updating role for member {MemberId} in group {ChatId}", memberId, chatId);
                 return ServerError("خطا در تغییر نقش عضو");
             }
         }
@@ -195,15 +196,15 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return BadRequest("خطا در خروج از گروه");
+                    return BadRequest("امکان ترک گروه وجود ندارد");
                 }
 
-                return Ok(new { message = "شما با موفقیت از گروه خارج شدید" });
+                return Ok(new { message = "شما با موفقیت گروه را ترک کردید" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error leaving group {ChatId} for user {UserId}", chatId, GetUserId());
-                return ServerError("خطا در خروج از گروه");
+                _logger.LogError(ex, "Error when user {UserId} attempted to leave group {ChatId}", GetUserId(), chatId);
+                return ServerError("خطا در ترک گروه");
             }
         }
 
@@ -217,7 +218,7 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return Forbidden("فقط مالک گروه می‌تواند آن را حذف کند");
+                    return Forbidden("شما دسترسی حذف گروه را ندارید");
                 }
 
                 return Ok(new { message = "گروه با موفقیت حذف شد" });
@@ -239,15 +240,47 @@ namespace Solvix.Server.API.Controllers
 
                 if (!result)
                 {
-                    return Forbidden("فقط مالک گروه می‌تواند مالکیت را منتقل کند");
+                    return Forbidden("شما دسترسی انتقال مالکیت گروه را ندارید");
                 }
 
                 return Ok(new { message = "مالکیت گروه با موفقیت منتقل شد" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error transferring ownership of group {ChatId}", chatId);
+                _logger.LogError(ex, "Error transferring ownership of group {ChatId} by user {UserId}", chatId, GetUserId());
                 return ServerError("خطا در انتقال مالکیت گروه");
+            }
+        }
+
+        [HttpGet("public")]
+        public async Task<IActionResult> GetPublicGroups([FromQuery] int skip = 0, [FromQuery] int take = 20)
+        {
+            try
+            {
+                // This would be implemented in ChatRepository
+                // For now, return empty list
+                return Ok(new List<object>());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting public groups");
+                return ServerError("خطا در دریافت گروه‌های عمومی");
+            }
+        }
+
+        [HttpPost("join/{joinLink}")]
+        public async Task<IActionResult> JoinGroupByLink(string joinLink)
+        {
+            try
+            {
+                // This would need implementation in GroupManagementService
+                // For now, return not implemented
+                return BadRequest("این قابلیت هنوز پیاده‌سازی نشده است");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error joining group by link {JoinLink}", joinLink);
+                return ServerError("خطا در پیوستن به گروه");
             }
         }
     }

@@ -15,14 +15,21 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Database Configuration
 builder.Services.AddDbContext<ChatDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null)));
 
-builder.Services.AddIdentity<AppUser, IdentityRole<long>>(options =>
+// Identity Configuration - Fixed to use AppRole instead of IdentityRole<long>
+builder.Services.AddIdentity<AppUser, AppRole>(options =>
 {
     options.Password.RequireDigit = false;
     options.Password.RequireLowercase = false;
@@ -32,33 +39,34 @@ builder.Services.AddIdentity<AppUser, IdentityRole<long>>(options =>
     options.Password.RequiredUniqueChars = 1;
     options.SignIn.RequireConfirmedEmail = false;
     options.SignIn.RequireConfirmedPhoneNumber = false;
+    options.User.RequireUniqueEmail = false;
 })
 .AddEntityFrameworkStores<ChatDbContext>()
 .AddDefaultTokenProviders();
 
-var jwtKey = builder.Configuration["Jwt:Key"];
+// JWT Configuration with better error handling
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtKey = jwtSection["Key"];
+var issuer = jwtSection["Issuer"];
+var audience = jwtSection["Audience"];
+
 if (string.IsNullOrEmpty(jwtKey))
-{
-    throw new InvalidOperationException("JWT Key not configured in appsettings.json for JWT Bearer setup.");
-}
-var issuer = builder.Configuration["Jwt:Issuer"];
+    throw new InvalidOperationException("JWT:Key not configured in appsettings.json");
 if (string.IsNullOrEmpty(issuer))
-{
-    throw new InvalidOperationException("JWT Issuer not configured in appsettings.json for JWT Bearer setup.");
-}
-var audience = builder.Configuration["Jwt:Audience"];
+    throw new InvalidOperationException("JWT:Issuer not configured in appsettings.json");
 if (string.IsNullOrEmpty(audience))
-{
-    throw new InvalidOperationException("JWT Audience not configured in appsettings.json for JWT Bearer setup.");
-}
+    throw new InvalidOperationException("JWT:Audience not configured in appsettings.json");
 
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(options =>
 {
+    options.SaveToken = true;
+    options.RequireHttpsMetadata = false; // Set to true in production
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -71,6 +79,7 @@ builder.Services.AddAuthentication(options =>
         ClockSkew = TimeSpan.Zero
     };
 
+    // SignalR Token Configuration
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -83,54 +92,68 @@ builder.Services.AddAuthentication(options =>
                 context.Token = accessToken;
             }
             return Task.CompletedTask;
+        },
+        OnAuthenticationFailed = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError(context.Exception, "Authentication failed");
+            return Task.CompletedTask;
         }
     };
 });
 
-// اضافه کردن کش برای نگهداری کدهای OTP
+// Memory Cache for OTP
 builder.Services.AddMemoryCache();
 
-// تنظیم HttpClient برای سرویس OTP
+// HTTP Client Configuration
 builder.Services.AddHttpClient("OtpClient", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Add("User-Agent", "Solvix-Server/1.0");
 });
 
-// ثبت سرویس‌های مورد نیاز
+// Repository Pattern Registration - Fixed lifetimes
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IUserContactRepository, UserContactRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
+builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
+builder.Services.AddScoped<IGroupSettingsRepository, GroupSettingsRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+// Application Services Registration - Fixed lifetimes to all Scoped
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IUserConnectionService, UserConnectionService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IGroupManagementService, GroupManagementService>();
-
-
-builder.Services.AddTransient<IUserService, UserService>();
-builder.Services.AddTransient<IChatService, ChatService>();
-builder.Services.AddTransient<IUserConnectionService, UserConnectionService>();
-builder.Services.AddTransient<INotificationService, NotificationService>();
-
-
-builder.Services.AddSingleton<ITokenService, TokenService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 
+// Token service as scoped instead of singleton for better security
+builder.Services.AddScoped<ITokenService, TokenService>();
 
-// ثبت سرویس‌های جدید برای احراز هویت با OTP
+// Authentication Services
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IAuthenticationStrategy, PasswordAuthenticationStrategy>();
 builder.Services.AddScoped<IAuthenticationStrategy, OtpAuthenticationStrategy>();
 builder.Services.AddScoped<AuthenticationContext>();
 
+// SignalR Configuration
 builder.Services.AddSignalR(options =>
 {
-    options.MaximumReceiveMessageSize = 102400;
+    options.MaximumReceiveMessageSize = 102400; // 100KB
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
 });
+
+// Rate Limiting Configuration - Fixed to handle proxy scenarios
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: GetClientIdentifier(httpContext),
             factory: partition => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -142,7 +165,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("AuthLimit", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: GetClientIdentifier(httpContext),
             factory: partition => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -154,7 +177,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("OtpRequestLimit", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: GetClientIdentifier(httpContext),
             factory: partition => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -165,29 +188,51 @@ builder.Services.AddRateLimiter(options =>
     );
 });
 
+// CORS Configuration
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policyBuilder =>
-        {
-            policyBuilder.AllowAnyOrigin()
+    options.AddPolicy("AllowAll", policyBuilder =>
+    {
+        policyBuilder.AllowAnyOrigin()
                    .AllowAnyMethod()
                    .AllowAnyHeader();
-        });
+    });
 });
 
+// Enhanced Logging
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
+// Add EventLog only on Windows platforms in production
+if (!builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
+{
+    builder.Logging.AddEventLog();
+}
+
 var app = builder.Build();
 
-FirebaseAdminSetup.Initialize(app);
+// Initialize Firebase with better error handling
+try
+{
+    FirebaseAdminSetup.Initialize(app);
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning(ex, "Firebase Admin SDK initialization failed. Push notifications will be disabled.");
+    // Don't crash the app, just log and continue
+}
 
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Solvix API V1");
+        c.RoutePrefix = string.Empty; // Serve Swagger UI at app's root
+    });
     app.UseDeveloperExceptionPage();
 }
 else
@@ -196,6 +241,7 @@ else
     app.UseHsts();
 }
 
+// Middleware pipeline order is important
 app.UseRateLimiter();
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
@@ -206,25 +252,19 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
 
-app.Use(async (context, next) =>
-{
-    if (!HttpMethods.IsPost(context.Request.Method) &&
-        !HttpMethods.IsPut(context.Request.Method) &&
-        !HttpMethods.IsPatch(context.Request.Method) &&
-        !HttpMethods.IsDelete(context.Request.Method))
-    {
-        await next(context);
-        return;
-    }
-
-    if (context.Request.Path.StartsWithSegments("/chathub") ||
-        context.Request.Path.StartsWithSegments("/api/auth"))
-    {
-        await next(context);
-        return;
-    }
-
-    await next(context);
-});
+// Health check endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 app.Run();
+
+// Helper method for better client identification in rate limiting
+static string GetClientIdentifier(HttpContext context)
+{
+    // Check for real IP behind proxy
+    var realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault()
+                ?? context.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
+                ?? context.Connection.RemoteIpAddress?.ToString()
+                ?? context.Request.Headers.Host.ToString();
+
+    return realIp;
+}

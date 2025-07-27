@@ -1,14 +1,11 @@
-﻿using Solvix.Server.Core.Entities;
-
-namespace Solvix.Server.Application.DTOs
+﻿namespace Solvix.Server.Application.DTOs
 {
     public class GroupInfoDto
     {
-        public string Id { get; set; } = "";
+        public Guid Id { get; set; }
         public string Title { get; set; } = "";
         public string? Description { get; set; }
-        public string? AvatarUrl { get; set; }
-        public string? GroupImageUrl { get; set; } // اضافه شده
+        public string? GroupImageUrl { get; set; }
         public long OwnerId { get; set; }
         public string OwnerName { get; set; } = "";
         public DateTime CreatedAt { get; set; }

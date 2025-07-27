@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Solvix.Server.Application.Helpers;
 using Solvix.Server.Core.Interfaces;
-using Solvix.Server.Infrastructure.Repositories;
 using System.Security.Claims;
 
 namespace Solvix.Server.API.Hubs
@@ -40,12 +39,29 @@ namespace Solvix.Server.API.Hubs
             return null;
         }
 
+        private long GetUserId()
+        {
+            var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && long.TryParse(userIdClaim.Value, out long userId))
+            {
+                return userId;
+            }
+            return 0;
+        }
+
         public override async Task OnConnectedAsync()
         {
             var userId = GetUserId();
             if (userId > 0)
             {
                 await _userConnectionService.AddConnectionAsync(userId, Context.ConnectionId);
+
+                // Join user to their personal notification group
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"User_{userId}");
+
+                // Join user to their chats
+                await JoinUserChats(userId);
+
                 _logger.LogInformation("User {UserId} connected with connection {ConnectionId}", userId, Context.ConnectionId);
             }
             await base.OnConnectedAsync();
@@ -58,9 +74,16 @@ namespace Solvix.Server.API.Hubs
             {
                 await _userConnectionService.RemoveConnectionAsync(Context.ConnectionId);
                 _logger.LogInformation("User {UserId} disconnected with connection {ConnectionId}", userId, Context.ConnectionId);
+
+                if (exception != null)
+                {
+                    _logger.LogWarning(exception, "User {UserId} disconnected with exception", userId);
+                }
             }
             await base.OnDisconnectedAsync(exception);
         }
+
+        #region Chat Management
 
         public async Task JoinChatGroup(Guid chatId)
         {
@@ -76,6 +99,7 @@ namespace Solvix.Server.API.Hubs
                 if (await _chatService.IsUserParticipantAsync(chatId, userId))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, $"Chat_{chatId}");
+                    await Clients.Caller.SendAsync("JoinedChat", chatId);
                     _logger.LogInformation("User {UserId} joined chat group {ChatId}", userId, chatId);
                 }
                 else
@@ -90,14 +114,112 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-
         public async Task LeaveChatGroup(Guid chatId)
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Chat_{chatId}");
             var userId = GetUserId();
+            await Clients.Caller.SendAsync("LeftChat", chatId);
             _logger.LogInformation("User {UserId} left chat group {ChatId}", userId, chatId);
         }
 
+        private async Task JoinUserChats(long userId)
+        {
+            try
+            {
+                var userChats = await _chatService.GetUserChatsAsync(userId);
+                foreach (var chat in userChats)
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, $"Chat_{chat.Id}");
+                }
+                _logger.LogDebug("User {UserId} joined {ChatCount} chat groups", userId, userChats.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error joining user chats for user {UserId}", userId);
+            }
+        }
+
+        #endregion
+
+        #region Message Operations
+
+        public async Task SendToChat(Guid chatId, string messageContent, string? correlationId = null)
+        {
+            var senderUserId = GetUserIdFromContext();
+            if (!senderUserId.HasValue)
+            {
+                await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت.", correlationId);
+                return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(messageContent))
+                {
+                    await Clients.Caller.SendAsync("ReceiveError", "متن پیام نمی‌تواند خالی باشد.", correlationId);
+                    return;
+                }
+
+                if (!await _chatService.IsUserParticipantAsync(chatId, senderUserId.Value))
+                {
+                    await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.", correlationId);
+                    return;
+                }
+
+                var message = await _chatService.SaveMessageAsync(chatId, senderUserId.Value, messageContent);
+                await _chatService.BroadcastMessageAsync(message);
+
+                // Confirm to sender
+                await Clients.Caller.SendAsync("MessageSent", new
+                {
+                    messageId = message.Id,
+                    correlationId = correlationId,
+                    sentAt = message.SentAt
+                });
+
+                _logger.LogInformation("Message sent by user {UserId} to chat {ChatId}", senderUserId.Value, chatId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending message to chat {ChatId} by user {UserId}", chatId, senderUserId.Value);
+                await Clients.Caller.SendAsync("ReceiveError", "خطا در ارسال پیام.", correlationId);
+            }
+        }
+
+        public async Task EditMessage(int messageId, string newContent)
+        {
+            var userId = GetUserId();
+            if (userId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(newContent))
+                {
+                    await Clients.Caller.SendAsync("Error", "محتوای جدید نمی‌تواند خالی باشد");
+                    return;
+                }
+
+                var editedMessage = await _chatService.EditMessageAsync(messageId, newContent, userId);
+                if (editedMessage != null)
+                {
+                    await _chatService.BroadcastMessageUpdateAsync(editedMessage);
+                    await Clients.Caller.SendAsync("MessageEdited", new { messageId = messageId });
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "شما اجازه ویرایش این پیام را ندارید");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error editing message {MessageId}", messageId);
+                await Clients.Caller.SendAsync("Error", "خطا در ویرایش پیام");
+            }
+        }
 
         public async Task DeleteMessage(int messageId)
         {
@@ -114,6 +236,7 @@ namespace Solvix.Server.API.Hubs
                 if (deletedMessage != null)
                 {
                     await _chatService.BroadcastMessageUpdateAsync(deletedMessage);
+                    await Clients.Caller.SendAsync("MessageDeleted", new { messageId = messageId });
                 }
                 else
                 {
@@ -127,120 +250,44 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-
-        public async Task SendToChat(Guid chatId, string messageContent, string correlationId)
+        public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds)
         {
-            var senderUserId = GetUserIdFromContext();
-            if (!senderUserId.HasValue)
+            var userId = GetUserId();
+            if (userId <= 0)
             {
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت. امکان ارسال پیام وجود ندارد.");
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
                 return;
             }
 
-            // اعتبارسنجی correlationId
-            if (string.IsNullOrEmpty(correlationId))
-            {
-                correlationId = Guid.NewGuid().ToString("N");
-            }
-
             try
             {
-                // ذخیره پیام و دریافت نسخه ذخیره شده
-                var savedMessage = await _chatService.SaveMessageAsync(chatId, senderUserId.Value, messageContent);
-
-                // ارسال تأییدیه همبستگی به فرستنده
-                var messageDto = MappingHelper.MapToMessageDto(savedMessage);
-                await Clients.Caller.SendAsync("MessageCorrelationConfirmation", correlationId, messageDto);
-
-                // انتشار پیام به همه اعضای چت
-                await _chatService.BroadcastMessageAsync(savedMessage);
-
-                _logger.LogInformation("Message sent to chat {ChatId} by user {UserId} with correlation {CorrelationId}, assigned ID {MessageId}",
-                    chatId, senderUserId.Value, correlationId, savedMessage.Id);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogWarning("User {UserId} attempted to send message to Chat {ChatId} without being a participant. Error: {Error}",
-                    senderUserId.Value, chatId, ex.Message);
-                await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending message to chat {ChatId} by user {UserId}", chatId, senderUserId.Value);
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در ارسال پیام.");
-            }
-        }
-
-        public async Task JoinGroup(Guid chatId)
-        {
-            var userId = GetUserIdFromContext();
-            if (!userId.HasValue) return;
-
-            try
-            {
-                // بررسی عضویت کاربر در چت
-                if (await _chatService.IsUserParticipantAsync(chatId, userId.Value))
+                // Validate that user can mark these messages as read
+                foreach (var messageId in messageIds)
                 {
-                    await Groups.AddToGroupAsync(Context.ConnectionId, chatId.ToString());
-                    _logger.LogInformation("User {UserId} joined group {ChatId} with connection {ConnectionId}",
-                        userId.Value, chatId, Context.ConnectionId);
-                }
-                else
-                {
-                    _logger.LogWarning("User {UserId} attempted to join group {ChatId} without being a participant",
-                        userId.Value, chatId);
-                    await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error joining group {ChatId} for user {UserId}", chatId, userId.Value);
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در اتصال به چت.");
-            }
-        }
-
-        public async Task LeaveGroup(Guid chatId)
-        {
-            var userId = GetUserIdFromContext();
-            if (!userId.HasValue) return;
-
-            try
-            {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId.ToString());
-                _logger.LogInformation("User {UserId} left group {ChatId} with connection {ConnectionId}",
-                    userId.Value, chatId, Context.ConnectionId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error leaving group {ChatId} for user {UserId}", chatId, userId.Value);
-            }
-        }
-
-        public async Task NotifyTyping(Guid chatId, bool isTyping)
-        {
-            var userId = GetUserId();
-            if (userId <= 0) return;
-
-            try
-            {
-                if (await _chatService.IsUserParticipantAsync(chatId, userId))
-                {
-                    await Clients.OthersInGroup($"Chat_{chatId}").SendAsync("UserTyping", new
+                    var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
+                    if (message != null && await _chatService.IsUserParticipantAsync(message.ChatId, userId))
                     {
-                        ChatId = chatId,
-                        UserId = userId,
-                        IsTyping = isTyping
-                    });
+                        await _chatService.MarkMessageAsReadAsync(messageId, userId);
+
+                        // Notify chat members about read status
+                        await Clients.Group($"Chat_{message.ChatId}")
+                            .SendAsync("MessageRead", new { MessageId = messageId, ReaderId = userId, ReadAt = DateTime.UtcNow });
+                    }
                 }
+
+                await Clients.Caller.SendAsync("MessagesMarkedAsRead", messageIds);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error notifying typing for user {UserId} in chat {ChatId}", userId, chatId);
+                _logger.LogError(ex, "Error in MarkMultipleMessagesAsReadAsync");
+                await Clients.Caller.SendAsync("Error", "Failed to mark messages as read");
             }
         }
 
+        #endregion
 
-        // ✅ متد جدید برای مدیریت گروه - اضافه کردن عضو
+        #region Group Management
+
         public async Task AddMemberToGroup(Guid chatId, long newMemberId)
         {
             var adminUserId = GetUserIdFromContext();
@@ -264,7 +311,12 @@ namespace Solvix.Server.API.Hubs
                 await _chatService.AddMemberToGroupAsync(chatId, newMemberId);
 
                 // اطلاع‌رسانی به همه اعضای گروه
-                await Clients.Group(chatId.ToString()).SendAsync("MemberAdded", chatId, newMemberId);
+                await Clients.Group($"Chat_{chatId}").SendAsync("MemberAdded", new
+                {
+                    chatId = chatId,
+                    memberId = newMemberId,
+                    addedBy = adminUserId.Value
+                });
 
                 _logger.LogInformation("User {AdminId} added user {NewMemberId} to group {ChatId}",
                     adminUserId.Value, newMemberId, chatId);
@@ -277,39 +329,6 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-
-        public async Task MarkMultipleMessagesAsReadAsync(List<int> messageIds)
-        {
-            var userId = GetUserId();
-            if (userId <= 0)
-            {
-                await Clients.Caller.SendAsync("Error", "User not authenticated");
-                return;
-            }
-
-            try
-            {
-                // اینجا باید chatId هم پاس بدین
-                // اما چون از signature قدیمی استفاده می‌کنین، باید اول پیام رو دریافت کنین
-                foreach (var messageId in messageIds)
-                {
-                    var message = await _unitOfWork.MessageRepository.GetByIdAsync(messageId);
-                    if (message != null)
-                    {
-                        await _chatService.MarkMultipleMessagesAsReadAsync(new List<int> { messageId }, userId);
-                        await Clients.Group($"Chat_{message.ChatId}")
-                            .SendAsync("MessageRead", new { MessageId = messageId, ReaderId = userId });
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in MarkMultipleMessagesAsReadAsync");
-                await Clients.Caller.SendAsync("Error", "Failed to mark messages as read");
-            }
-        }
-
-        // ✅ متد جدید برای مدیریت گروه - حذف عضو
         public async Task RemoveMemberFromGroup(Guid chatId, long memberToRemoveId)
         {
             var adminUserId = GetUserIdFromContext();
@@ -333,14 +352,12 @@ namespace Solvix.Server.API.Hubs
                 await _chatService.RemoveMemberFromGroupAsync(chatId, memberToRemoveId);
 
                 // اطلاع‌رسانی به همه اعضای گروه
-                await Clients.Group(chatId.ToString()).SendAsync("MemberRemoved", chatId, memberToRemoveId);
-
-                // حذف عضو از گروه SignalR
-                var memberConnections = await _userConnectionService.GetConnectionsForUserAsync(memberToRemoveId);
-                foreach (var connectionId in memberConnections)
+                await Clients.Group($"Chat_{chatId}").SendAsync("MemberRemoved", new
                 {
-                    await Groups.RemoveFromGroupAsync(connectionId, chatId.ToString());
-                }
+                    chatId = chatId,
+                    memberId = memberToRemoveId,
+                    removedBy = adminUserId.Value
+                });
 
                 _logger.LogInformation("User {AdminId} removed user {MemberId} from group {ChatId}",
                     adminUserId.Value, memberToRemoveId, chatId);
@@ -353,8 +370,7 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-        // ✅ متد جدید برای تغییر نقش عضو
-        public async Task ChangeMemberRole(Guid chatId, long memberId, string newRole)
+        public async Task UpdateMemberRole(Guid chatId, long memberId, string newRole)
         {
             var adminUserId = GetUserIdFromContext();
             if (!adminUserId.HasValue)
@@ -365,7 +381,7 @@ namespace Solvix.Server.API.Hubs
 
             try
             {
-                // بررسی دسترسی تغییر نقش
+                // بررسی دسترسی ادمین
                 var hasPermission = await _chatService.HasChangeRolePermissionAsync(chatId, adminUserId.Value);
                 if (!hasPermission)
                 {
@@ -373,133 +389,129 @@ namespace Solvix.Server.API.Hubs
                     return;
                 }
 
-                // تغییر نقش عضو
+                // تغییر نقش
                 await _chatService.ChangeMemberRoleAsync(chatId, memberId, newRole);
 
                 // اطلاع‌رسانی به همه اعضای گروه
-                await Clients.Group(chatId.ToString()).SendAsync("MemberRoleChanged", chatId, memberId, newRole);
+                await Clients.Group($"Chat_{chatId}").SendAsync("MemberRoleUpdated", new
+                {
+                    chatId = chatId,
+                    memberId = memberId,
+                    newRole = newRole,
+                    updatedBy = adminUserId.Value
+                });
 
-                _logger.LogInformation("User {AdminId} changed role of user {MemberId} to {NewRole} in group {ChatId}",
+                _logger.LogInformation("User {AdminId} updated role of user {MemberId} to {NewRole} in group {ChatId}",
                     adminUserId.Value, memberId, newRole, chatId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error changing role of member {MemberId} to {NewRole} in group {ChatId} by admin {AdminId}",
-                    memberId, newRole, chatId, adminUserId.Value);
+                _logger.LogError(ex, "Error updating member role for {MemberId} in group {ChatId} by admin {AdminId}",
+                    memberId, chatId, adminUserId.Value);
                 await Clients.Caller.SendAsync("ReceiveError", "خطا در تغییر نقش عضو.");
             }
         }
 
-        // ✅ متد جدید برای خروج از گروه
-        public async Task LeaveGroupChat(Guid chatId)
+        #endregion
+
+        #region Typing Indicators
+
+        public async Task StartTyping(Guid chatId)
         {
-            var userId = GetUserIdFromContext();
-            if (!userId.HasValue)
-            {
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت.");
-                return;
-            }
+            var userId = GetUserId();
+            if (userId <= 0) return;
 
             try
             {
-                // بررسی عضویت کاربر در چت
-                if (!await _chatService.IsUserParticipantAsync(chatId, userId.Value))
+                if (await _chatService.IsUserParticipantAsync(chatId, userId))
                 {
-                    await Clients.Caller.SendAsync("ReceiveError", "شما عضو این چت نیستید.");
-                    return;
-                }
-
-                // خروج از گروه
-                await _chatService.LeaveGroupAsync(chatId, userId.Value);
-
-                // حذف از گروه SignalR
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId.ToString());
-
-                // اطلاع‌رسانی به سایر اعضای گروه
-                await Clients.Group(chatId.ToString()).SendAsync("MemberLeft", chatId, userId.Value);
-
-                // تأیید خروج به کاربر
-                await Clients.Caller.SendAsync("GroupLeft", chatId);
-
-                _logger.LogInformation("User {UserId} left group {ChatId}", userId.Value, chatId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error leaving group {ChatId} for user {UserId}", chatId, userId.Value);
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در خروج از گروه.");
-            }
-        }
-
-        // ✅ متد جدید برای حذف گروه (فقط مالک)
-        public async Task DeleteGroup(Guid chatId)
-        {
-            var ownerId = GetUserIdFromContext();
-            if (!ownerId.HasValue)
-            {
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در احراز هویت.");
-                return;
-            }
-
-            try
-            {
-                // بررسی مالکیت گروه
-                var isOwner = await _chatService.IsGroupOwnerAsync(chatId, ownerId.Value);
-                if (!isOwner)
-                {
-                    await Clients.Caller.SendAsync("ReceiveError", "فقط مالک گروه می‌تواند آن را حذف کند.");
-                    return;
-                }
-
-                // اطلاع‌رسانی به همه اعضای گروه قبل از حذف
-                await Clients.Group(chatId.ToString()).SendAsync("GroupDeleted", chatId);
-
-                // حذف گروه
-                await _chatService.DeleteGroupAsync(chatId);
-
-                _logger.LogInformation("User {OwnerId} deleted group {ChatId}", ownerId.Value, chatId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting group {ChatId} by owner {OwnerId}", chatId, ownerId.Value);
-                await Clients.Caller.SendAsync("ReceiveError", "خطا در حذف گروه.");
-            }
-        }
-
-        private async Task NotifyUserStatusChanged(long userId, bool isOnline)
-        {
-            try
-            {
-                // دریافت چت‌های خصوصی کاربر
-                var userChats = await _chatService.GetUserChatsAsync(userId);
-                var privateChats = userChats.Where(c => !c.IsGroup).ToList();
-
-                // استخراج آیدی کاربران دیگر در چت‌های خصوصی
-                var contactIds = new HashSet<long>();
-                foreach (var chat in privateChats)
-                {
-                    foreach (var participant in chat.Participants)
+                    await Clients.OthersInGroup($"Chat_{chatId}").SendAsync("UserStartedTyping", new
                     {
-                        if (participant.Id != userId)
-                        {
-                            contactIds.Add(participant.Id);
-                        }
+                        chatId = chatId,
+                        userId = userId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in StartTyping for user {UserId} in chat {ChatId}", userId, chatId);
+            }
+        }
+
+        public async Task StopTyping(Guid chatId)
+        {
+            var userId = GetUserId();
+            if (userId <= 0) return;
+
+            try
+            {
+                if (await _chatService.IsUserParticipantAsync(chatId, userId))
+                {
+                    await Clients.OthersInGroup($"Chat_{chatId}").SendAsync("UserStoppedTyping", new
+                    {
+                        chatId = chatId,
+                        userId = userId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in StopTyping for user {UserId} in chat {ChatId}", userId, chatId);
+            }
+        }
+
+        #endregion
+
+        #region Status Updates
+
+        public async Task UpdateOnlineStatus(bool isOnline)
+        {
+            var userId = GetUserId();
+            if (userId <= 0) return;
+
+            try
+            {
+                // Update user's online status in database
+                var user = await _unitOfWork.UserRepository.GetByIdAsync(userId);
+                if (user != null)
+                {
+                    user.IsOnline = isOnline;
+                    user.LastActiveAt = DateTime.UtcNow;
+                    if (!isOnline)
+                    {
+                        user.LastSeenAt = DateTime.UtcNow;
                     }
+                    await _unitOfWork.UserRepository.UpdateAsync(user);
+                    await _unitOfWork.CompleteAsync();
                 }
 
-                // ارسال وضعیت آنلاین بودن به هر کاربر
+                // Notify contacts about status change
+                await NotifyUserStatusChange(userId, isOnline);
+
+                _logger.LogDebug("User {UserId} status updated to {IsOnline}", userId, isOnline);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating online status for user {UserId}", userId);
+            }
+        }
+
+        private async Task NotifyUserStatusChange(long userId, bool isOnline)
+        {
+            try
+            {
+                // Find user's contacts and notify them
+                var contacts = await _unitOfWork.UserContactRepository.GetUserContactsAsync(userId);
+                var contactIds = contacts.Select(c => c.ContactUserId).ToList();
+
                 foreach (var contactId in contactIds)
                 {
-                    var connectionIds = await _userConnectionService.GetConnectionsForUserAsync(contactId);
-
-                    foreach (var connectionId in connectionIds)
+                    await Clients.Group($"User_{contactId}").SendAsync("ContactStatusChanged", new
                     {
-                        await Clients.Client(connectionId).SendAsync(
-                            "UserStatusChanged",
-                            userId,
-                            isOnline,
-                            isOnline ? null : DateTime.UtcNow
-                        );
-                    }
+                        userId = userId,
+                        isOnline = isOnline,
+                        lastSeen = !isOnline ? DateTime.UtcNow : null
+                    });
                 }
 
                 _logger.LogDebug("User status changed notification sent for user {UserId} (online: {IsOnline}) to {ContactCount} contacts",
@@ -511,14 +523,101 @@ namespace Solvix.Server.API.Hubs
             }
         }
 
-        private long GetUserId()
+        #endregion
+
+        #region Voice/Video Call Support (Future Implementation)
+
+        public async Task InitiateCall(Guid chatId, string callType, string sdpOffer)
         {
-            var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim != null && long.TryParse(userIdClaim.Value, out long userId))
+            var userId = GetUserId();
+            if (userId <= 0)
             {
-                return userId;
+                await Clients.Caller.SendAsync("Error", "User not authenticated");
+                return;
             }
-            return 0;
+
+            try
+            {
+                if (await _chatService.IsUserParticipantAsync(chatId, userId))
+                {
+                    await Clients.OthersInGroup($"Chat_{chatId}").SendAsync("IncomingCall", new
+                    {
+                        chatId = chatId,
+                        callerId = userId,
+                        callType = callType,
+                        sdpOffer = sdpOffer
+                    });
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "شما عضو این چت نیستید");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initiating call in chat {ChatId} by user {UserId}", chatId, userId);
+                await Clients.Caller.SendAsync("Error", "خطا در برقراری تماس");
+            }
         }
+
+        public async Task AcceptCall(Guid chatId, long callerId, string sdpAnswer)
+        {
+            var userId = GetUserId();
+            if (userId <= 0) return;
+
+            try
+            {
+                await Clients.Group($"User_{callerId}").SendAsync("CallAccepted", new
+                {
+                    chatId = chatId,
+                    accepterId = userId,
+                    sdpAnswer = sdpAnswer
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error accepting call from {CallerId} in chat {ChatId}", callerId, chatId);
+            }
+        }
+
+        public async Task RejectCall(Guid chatId, long callerId)
+        {
+            var userId = GetUserId();
+            if (userId <= 0) return;
+
+            try
+            {
+                await Clients.Group($"User_{callerId}").SendAsync("CallRejected", new
+                {
+                    chatId = chatId,
+                    rejecterId = userId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error rejecting call from {CallerId} in chat {ChatId}", callerId, chatId);
+            }
+        }
+
+        public async Task EndCall(Guid chatId)
+        {
+            var userId = GetUserId();
+            if (userId <= 0) return;
+
+            try
+            {
+                await Clients.Group($"Chat_{chatId}").SendAsync("CallEnded", new
+                {
+                    chatId = chatId,
+                    endedBy = userId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ending call in chat {ChatId}", chatId);
+            }
+        }
+
+        #endregion
     }
 }

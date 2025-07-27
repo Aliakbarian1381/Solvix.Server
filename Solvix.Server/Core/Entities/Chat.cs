@@ -23,23 +23,25 @@ namespace Solvix.Server.Core.Entities
 
         public DateTime? LastMessageTime { get; set; }
 
+        // Group Settings Properties
         public int MaxMembers { get; set; } = 256;
-
         public bool OnlyAdminsCanAddMembers { get; set; } = false;
-
         public bool OnlyAdminsCanEditGroupInfo { get; set; } = true;
-
         public bool OnlyAdminsCanSendMessages { get; set; } = false;
+        public bool OnlyAdminsCanDeleteMessages { get; set; } = false;
+        public bool AllowMemberToLeave { get; set; } = true;
+        public bool IsPublic { get; set; } = false;
+        public string? JoinLink { get; set; }
 
+        // Ownership
         public long? OwnerId { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // Navigation Properties - حذف تکراری ها
+        // Navigation Properties
         public virtual ICollection<Participant> Participants { get; set; } = new List<Participant>();
         public virtual ICollection<Message> Messages { get; set; } = new List<Message>();
         public virtual ICollection<GroupMember> GroupMembers { get; set; } = new List<GroupMember>();
         public virtual GroupSettings? GroupSettings { get; set; }
     }
-
 }

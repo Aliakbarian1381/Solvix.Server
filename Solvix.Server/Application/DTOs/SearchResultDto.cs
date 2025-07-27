@@ -2,11 +2,12 @@
 {
     public class SearchResultDto
     {
-        public string Id { get; set; } // Can be Guid for chat or long for user
+        public required string Id { get; set; }
         public string Title { get; set; } = "";
         public string? Subtitle { get; set; }
-        public string? AvatarText { get; set; }
-        public string Type { get; set; } // "chat" or "user"
-        public object Entity { get; set; } = default!; // The full ChatDto or UserDto
+        public required string Type { get; set; } // "user", "chat", "group"
+        public object? Entity { get; set; }
+        public string? ImageUrl { get; set; }
+        public bool IsOnline { get; set; }
     }
 }

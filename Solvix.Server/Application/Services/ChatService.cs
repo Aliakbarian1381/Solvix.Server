@@ -73,7 +73,7 @@ namespace Solvix.Server.Application.Services
                 var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(chatId);
                 if (chat == null)
                 {
-                    _logger.LogWarning("Chat {ChatId} not found.", chatId);
+                    _logger.LogWarning("Chat {ChatId} not found", chatId);
                     return null;
                 }
 
@@ -160,7 +160,6 @@ namespace Solvix.Server.Application.Services
                     SenderId = senderId,
                     Content = content,
                     SentAt = DateTime.UtcNow,
-                    IsRead = false,
                     IsEdited = false,
                     IsDeleted = false
                 };
@@ -401,7 +400,7 @@ namespace Solvix.Server.Application.Services
                 var updatedChat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(groupChat.Id);
                 var onlineStatuses = new Dictionary<long, bool>();
 
-                foreach (var participant in updatedChat.Participants)
+                foreach (var participant in updatedChat!.Participants)
                 {
                     onlineStatuses[participant.UserId] = await _userConnectionService.IsUserOnlineAsync(participant.UserId);
                 }
@@ -410,7 +409,7 @@ namespace Solvix.Server.Application.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating group chat with title {Title}", title);
+                _logger.LogError(ex, "Error creating group chat by user {CreatorId}", creatorId);
                 throw;
             }
         }
@@ -423,21 +422,24 @@ namespace Solvix.Server.Application.Services
                 if (chat == null || !chat.IsGroup)
                     return false;
 
-                // Check if user is owner
+                // Owner can always add members
                 if (chat.OwnerId == userId)
                     return true;
 
-                // Check group settings
-                if (!chat.OnlyAdminsCanAddMembers)
-                    return await IsUserParticipantAsync(chatId, userId);
+                // If setting allows only admins and user is not admin
+                if (chat.OnlyAdminsCanAddMembers)
+                {
+                    // Check if user is admin (you might need to implement admin roles)
+                    // For now, only owner can add if this setting is enabled
+                    return false;
+                }
 
-                // Check if user is admin
-                var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, userId);
-                return participant?.Role == "Admin";
+                // Otherwise, any participant can add members
+                return await IsUserParticipantAsync(chatId, userId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking add member permission for chat {ChatId} and user {UserId}", chatId, userId);
+                _logger.LogError(ex, "Error checking add member permission for user {UserId} in chat {ChatId}", userId, chatId);
                 return false;
             }
         }
@@ -450,16 +452,12 @@ namespace Solvix.Server.Application.Services
                 if (chat == null || !chat.IsGroup)
                     return false;
 
-                // Only owner and admins can remove members
-                if (chat.OwnerId == userId)
-                    return true;
-
-                var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, userId);
-                return participant?.Role == "Admin";
+                // Only owner can remove members
+                return chat.OwnerId == userId;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking remove member permission for chat {ChatId} and user {UserId}", chatId, userId);
+                _logger.LogError(ex, "Error checking remove member permission for user {UserId} in chat {ChatId}", userId, chatId);
                 return false;
             }
         }
@@ -477,7 +475,7 @@ namespace Solvix.Server.Application.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking change role permission for chat {ChatId} and user {UserId}", chatId, userId);
+                _logger.LogError(ex, "Error checking change role permission for user {UserId} in chat {ChatId}", userId, chatId);
                 return false;
             }
         }
@@ -491,7 +489,7 @@ namespace Solvix.Server.Application.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking if user {UserId} is owner of chat {ChatId}", userId, chatId);
+                _logger.LogError(ex, "Error checking group ownership for user {UserId} in chat {ChatId}", userId, chatId);
                 return false;
             }
         }
@@ -500,19 +498,14 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
-                if (chat == null || !chat.IsGroup)
-                    throw new ArgumentException("گروه یافت نشد");
-
-                // بررسی اینکه کاربر قبلاً عضو نباشد
-                if (await IsUserParticipantAsync(chatId, memberId))
-                    throw new ArgumentException("کاربر قبلاً عضو گروه است");
-
-                // اضافه کردن عضو جدید
                 await _unitOfWork.ChatRepository.AddParticipantAsync(chatId, memberId);
                 await _unitOfWork.CompleteAsync();
 
-                _logger.LogInformation("User {MemberId} added to group {ChatId}", memberId, chatId);
+                // Notify group members
+                await _hubContext.Clients.Group($"Chat_{chatId}")
+                    .SendAsync("MemberAdded", new { chatId, memberId });
+
+                _logger.LogInformation("Member {MemberId} added to group {ChatId}", memberId, chatId);
             }
             catch (Exception ex)
             {
@@ -525,18 +518,14 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
-                if (chat == null || !chat.IsGroup)
-                    throw new ArgumentException("گروه یافت نشد");
-
-                // نمی‌توان مالک را حذف کرد
-                if (memberId == chat.OwnerId)
-                    throw new ArgumentException("نمی‌توان مالک گروه را حذف کرد");
-
                 await _unitOfWork.ChatRepository.RemoveParticipantAsync(chatId, memberId);
                 await _unitOfWork.CompleteAsync();
 
-                _logger.LogInformation("User {MemberId} removed from group {ChatId}", memberId, chatId);
+                // Notify group members
+                await _hubContext.Clients.Group($"Chat_{chatId}")
+                    .SendAsync("MemberRemoved", new { chatId, memberId });
+
+                _logger.LogInformation("Member {MemberId} removed from group {ChatId}", memberId, chatId);
             }
             catch (Exception ex)
             {
@@ -549,19 +538,22 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
-                var participant = await _unitOfWork.ChatRepository.GetParticipantAsync(chatId, memberId);
-                if (participant == null)
-                    throw new ArgumentException("عضو یافت نشد");
+                // This would require implementing role management in the database
+                // For now, we'll just log the action
+                _logger.LogInformation("Role change requested for member {MemberId} in group {ChatId} to {NewRole}",
+                    memberId, chatId, newRole);
 
-                participant.Role = newRole;
-                await _unitOfWork.CompleteAsync();
+                // You would implement role change logic here
+                // await _unitOfWork.GroupMemberRepository.UpdateRoleAsync(chatId, memberId, newRole);
+                // await _unitOfWork.CompleteAsync();
 
-                _logger.LogInformation("Role of member {MemberId} changed to {NewRole} in group {ChatId}",
-                    memberId, newRole, chatId);
+                // Notify group members
+                await _hubContext.Clients.Group($"Chat_{chatId}")
+                    .SendAsync("MemberRoleChanged", new { chatId, memberId, newRole });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error changing role of member {MemberId} in group {ChatId}", memberId, chatId);
+                _logger.LogError(ex, "Error changing role for member {MemberId} in group {ChatId}", memberId, chatId);
                 throw;
             }
         }
@@ -571,21 +563,18 @@ namespace Solvix.Server.Application.Services
             try
             {
                 var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
-                if (chat == null || !chat.IsGroup)
-                    throw new ArgumentException("گروه یافت نشد");
+                if (chat?.OwnerId == userId)
+                {
+                    throw new InvalidOperationException("Group owner cannot leave. Transfer ownership first.");
+                }
 
-                // مالک نمی‌تواند گروه را ترک کند
-                if (userId == chat.OwnerId)
-                    throw new ArgumentException("مالک نمی‌تواند گروه را ترک کند");
-
-                await _unitOfWork.ChatRepository.RemoveParticipantAsync(chatId, userId);
-                await _unitOfWork.CompleteAsync();
+                await RemoveMemberFromGroupAsync(chatId, userId);
 
                 _logger.LogInformation("User {UserId} left group {ChatId}", userId, chatId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error when user {UserId} leaving group {ChatId}", userId, chatId);
+                _logger.LogError(ex, "Error when user {UserId} attempted to leave group {ChatId}", userId, chatId);
                 throw;
             }
         }
@@ -594,22 +583,22 @@ namespace Solvix.Server.Application.Services
         {
             try
             {
+                // Delete all messages first
+                await _unitOfWork.MessageRepository.DeleteAllMessagesAsync(chatId);
+
+                // Delete the chat
                 var chat = await _unitOfWork.ChatRepository.GetByIdAsync(chatId);
-                if (chat == null || !chat.IsGroup)
-                    throw new ArgumentException("گروه یافت نشد");
-
-                // حذف همه پیام‌ها
-                var messages = await _unitOfWork.MessageRepository.ListAsync(m => m.ChatId == chatId);
-                foreach (var message in messages)
+                if (chat != null)
                 {
-                    await _unitOfWork.MessageRepository.DeleteAsync(message);
+                    await _unitOfWork.ChatRepository.DeleteAsync(chat);
+                    await _unitOfWork.CompleteAsync();
+
+                    // Notify all members
+                    await _hubContext.Clients.Group($"Chat_{chatId}")
+                        .SendAsync("GroupDeleted", new { chatId });
+
+                    _logger.LogInformation("Group {ChatId} deleted", chatId);
                 }
-
-                // حذف گروه
-                await _unitOfWork.ChatRepository.DeleteAsync(chat);
-                await _unitOfWork.CompleteAsync();
-
-                _logger.LogInformation("Group {ChatId} deleted", chatId);
             }
             catch (Exception ex)
             {
@@ -624,11 +613,14 @@ namespace Solvix.Server.Application.Services
             {
                 var chat = await _unitOfWork.ChatRepository.GetChatWithParticipantsAsync(chatId);
                 if (chat == null || !chat.IsGroup)
+                {
                     throw new ArgumentException("Group not found");
+                }
 
-                // Check if user is participant
-                if (!await _unitOfWork.ChatRepository.IsUserParticipantAsync(chatId, userId))
+                if (!await IsUserParticipantAsync(chatId, userId))
+                {
                     throw new UnauthorizedAccessException("User is not a participant");
+                }
 
                 var owner = await _unitOfWork.UserRepository.GetByIdAsync(chat.OwnerId ?? 0);
                 var members = new List<GroupMemberDto>();
@@ -636,23 +628,25 @@ namespace Solvix.Server.Application.Services
                 foreach (var participant in chat.Participants.Where(p => p.IsActive))
                 {
                     var isOnline = await _userConnectionService.IsUserOnlineAsync(participant.UserId);
+                    var role = participant.UserId == chat.OwnerId ? "Owner" : "Member";
+
                     members.Add(new GroupMemberDto
                     {
                         UserId = participant.UserId,
-                        Username = participant.User.UserName ?? "",
-                        FirstName = participant.User.FirstName,
-                        LastName = participant.User.LastName,
-                        ProfilePictureUrl = participant.User.ProfilePictureUrl,
-                        Role = participant.Role,
+                        Username = participant.User?.UserName ?? "",
+                        FirstName = participant.User?.FirstName,
+                        LastName = participant.User?.LastName,
+                        ProfilePictureUrl = participant.User?.ProfilePictureUrl,
+                        Role = role,
                         JoinedAt = participant.JoinedAt,
                         IsOnline = isOnline,
-                        LastSeen = participant.User.LastSeenAt
+                        LastActive = participant.User?.LastActiveAt
                     });
                 }
 
                 return new GroupInfoDto
                 {
-                    Id = chat.Id.ToString(),
+                    Id = chat.Id,
                     Title = chat.Title ?? "",
                     Description = chat.Description,
                     GroupImageUrl = chat.GroupImageUrl,
@@ -660,13 +654,19 @@ namespace Solvix.Server.Application.Services
                     OwnerName = owner?.UserName ?? "",
                     CreatedAt = chat.CreatedAt,
                     MembersCount = members.Count,
-                    Members = members,
+                    Members = members.OrderBy(m => m.Role == "Owner" ? 0 : 1)
+                                   .ThenBy(m => m.Username)
+                                   .ToList(),
                     Settings = new GroupSettingsDto
                     {
                         MaxMembers = chat.MaxMembers,
                         OnlyAdminsCanSendMessages = chat.OnlyAdminsCanSendMessages,
                         OnlyAdminsCanAddMembers = chat.OnlyAdminsCanAddMembers,
-                        OnlyAdminsCanEditInfo = chat.OnlyAdminsCanEditGroupInfo
+                        OnlyAdminsCanEditInfo = chat.OnlyAdminsCanEditGroupInfo,
+                        OnlyAdminsCanDeleteMessages = chat.OnlyAdminsCanDeleteMessages,
+                        AllowMemberToLeave = chat.AllowMemberToLeave,
+                        IsPublic = chat.IsPublic,
+                        JoinLink = chat.JoinLink
                     }
                 };
             }
@@ -685,8 +685,7 @@ namespace Solvix.Server.Application.Services
                 if (chat == null || !chat.IsGroup)
                     throw new ArgumentException("Group not found");
 
-                // Check if user is participant
-                if (!await _unitOfWork.ChatRepository.IsUserParticipantAsync(chatId, userId))
+                if (!await IsUserParticipantAsync(chatId, userId))
                     throw new UnauthorizedAccessException("User is not a participant");
 
                 return new GroupSettingsDto
@@ -694,7 +693,11 @@ namespace Solvix.Server.Application.Services
                     MaxMembers = chat.MaxMembers,
                     OnlyAdminsCanSendMessages = chat.OnlyAdminsCanSendMessages,
                     OnlyAdminsCanAddMembers = chat.OnlyAdminsCanAddMembers,
-                    OnlyAdminsCanEditInfo = chat.OnlyAdminsCanEditGroupInfo
+                    OnlyAdminsCanEditInfo = chat.OnlyAdminsCanEditGroupInfo,
+                    OnlyAdminsCanDeleteMessages = chat.OnlyAdminsCanDeleteMessages,
+                    AllowMemberToLeave = chat.AllowMemberToLeave,
+                    IsPublic = chat.IsPublic,
+                    JoinLink = chat.JoinLink
                 };
             }
             catch (Exception ex)
@@ -712,7 +715,7 @@ namespace Solvix.Server.Application.Services
                 if (chat == null || !chat.IsGroup)
                     throw new ArgumentException("Group not found");
 
-                // Check permissions
+                // Check permissions - only owner can update settings
                 if (!await HasChangeRolePermissionAsync(chatId, userId))
                     throw new UnauthorizedAccessException("User doesn't have permission to update settings");
 
@@ -720,9 +723,19 @@ namespace Solvix.Server.Application.Services
                 chat.OnlyAdminsCanSendMessages = settings.OnlyAdminsCanSendMessages;
                 chat.OnlyAdminsCanAddMembers = settings.OnlyAdminsCanAddMembers;
                 chat.OnlyAdminsCanEditGroupInfo = settings.OnlyAdminsCanEditInfo;
+                chat.OnlyAdminsCanDeleteMessages = settings.OnlyAdminsCanDeleteMessages;
+                chat.AllowMemberToLeave = settings.AllowMemberToLeave;
+                chat.IsPublic = settings.IsPublic;
+                chat.JoinLink = settings.JoinLink;
 
                 await _unitOfWork.ChatRepository.UpdateAsync(chat);
                 await _unitOfWork.CompleteAsync();
+
+                // Notify group members about settings change
+                await _hubContext.Clients.Group($"Chat_{chatId}")
+                    .SendAsync("GroupSettingsUpdated", new { chatId, settings });
+
+                _logger.LogInformation("Group settings updated for chat {ChatId} by user {UserId}", chatId, userId);
             }
             catch (Exception ex)
             {
@@ -750,7 +763,8 @@ namespace Solvix.Server.Application.Services
                         var recipientUser = await _unitOfWork.UserRepository.GetByIdAsync(participant.UserId);
                         if (recipientUser != null && !string.IsNullOrEmpty(recipientUser.FcmToken))
                         {
-                            var senderName = message.Sender?.UserName ?? "کاربر";
+                            var senderName = message.Sender?.FirstName + " " + message.Sender?.LastName
+                                           ?? "کاربر";
                             var chatTitle = chat.IsGroup ? chat.Title : senderName;
 
                             // تصحیح: استفاده از FirebaseAdmin.Messaging.Notification

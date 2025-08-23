@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Solvix.Server.API.Hubs;
@@ -177,6 +178,20 @@ builder.Services.AddSignalR(options =>
 // Rate Limiting Configuration - Fixed to handle proxy scenarios
 builder.Services.AddRateLimiter(options =>
 {
+    options.AddFixedWindowLimiter("AuthLimit", opt =>
+    {
+        opt.PermitLimit = 10; // 10 درخواست
+        opt.Window = TimeSpan.FromMinutes(1); // در هر 1 دقیقه
+        opt.QueueLimit = 2;
+        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    }).AddFixedWindowLimiter("OtpRequestLimit", opt =>
+    {
+        opt.PermitLimit = 3; // 3 درخواست
+        opt.Window = TimeSpan.FromMinutes(5); // در هر 5 دقیقه
+        opt.QueueLimit = 1;
+        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
         var clientId = GetClientIdentifier(context);

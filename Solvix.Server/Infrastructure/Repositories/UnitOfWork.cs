@@ -9,7 +9,6 @@ namespace Solvix.Server.Infrastructure.Repositories
         private IChatRepository? _chatRepository;
         private IMessageRepository? _messageRepository;
         private IUserRepository? _userRepository;
-        private IGroupMemberRepository? _groupMemberRepository;
         private IGroupSettingsRepository? _groupSettingsRepository;
         private IUserContactRepository? _userContactRepository;
 
@@ -27,9 +26,7 @@ namespace Solvix.Server.Infrastructure.Repositories
         public IUserRepository UserRepository =>
             _userRepository ??= new UserRepository(_context);
 
-        public IGroupMemberRepository GroupMemberRepository =>
-            _groupMemberRepository ??= new GroupMemberRepository(_context);
-
+      
         public IGroupSettingsRepository GroupSettingsRepository =>
             _groupSettingsRepository ??= new GroupSettingsRepository(_context);
 

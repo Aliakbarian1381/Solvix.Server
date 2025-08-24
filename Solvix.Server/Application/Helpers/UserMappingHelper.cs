@@ -109,22 +109,6 @@ namespace Solvix.Server.Application.Helpers
             };
         }
 
-        public static GroupMemberDto MapToGroupMemberDto(GroupMember member)
-        {
-            return new GroupMemberDto
-            {
-                Id = member.UserId,
-                UserId = member.UserId,
-                Username = member.User?.Username ?? "",
-                FirstName = member.User?.FirstName,
-                LastName = member.User?.LastName,
-                ProfilePictureUrl = member.User?.ProfilePictureUrl,
-                Role = member.Role.ToString(),
-                JoinedAt = member.JoinedAt,
-                IsOnline = member.User?.IsOnline ?? false,
-                LastActive = member.User?.LastActiveAt
-            };
-        }
 
         public static GroupSettingsDto MapToGroupSettingsDto(GroupSettings? settings)
         {

@@ -9,7 +9,6 @@ namespace Solvix.Server.Core.Entities
         public string? LastName { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? LastActiveAt { get; set; }
-        public DateTime? LastSeenAt { get; set; }
         public string? FcmToken { get; set; }
         public string? ProfilePictureUrl { get; set; }
 
@@ -17,7 +16,12 @@ namespace Solvix.Server.Core.Entities
 
         public string Username => UserName ?? "";
 
-        public virtual ICollection<Message> SentMessages { get; set; } = new HashSet<Message>();
-        public virtual ICollection<UserConnection> Connections { get; set; } = new HashSet<UserConnection>();
+        public virtual ICollection<Participant> Chats { get; set; } = new List<Participant>();
+        public virtual ICollection<Message> SentMessages { get; set; } = new List<Message>();
+        public virtual ICollection<UserContact> Contacts { get; set; } = new List<UserContact>();
+        public virtual ICollection<UserContact> ContactOf { get; set; } = new List<UserContact>();
+        public virtual ICollection<UserConnection> Connections { get; set; } = new List<UserConnection>();
+
+
     }
 }

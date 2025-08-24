@@ -145,7 +145,6 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IUserContactRepository, UserContactRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
-builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 builder.Services.AddScoped<IGroupSettingsRepository, GroupSettingsRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 

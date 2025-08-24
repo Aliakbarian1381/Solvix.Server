@@ -1,4 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// Solvix.Server/Solvix.Server/Infrastructure/Repositories/ChatRepository.cs
+
+using Microsoft.EntityFrameworkCore;
 using Solvix.Server.Core.Entities;
 using Solvix.Server.Core.Interfaces;
 using Solvix.Server.Data;
@@ -31,8 +33,7 @@ namespace Solvix.Server.Infrastructure.Repositories
             return await _context.Chats
                 .Include(c => c.Participants.Where(p => p.IsActive))
                     .ThenInclude(p => p.User)
-                .Include(c => c.GroupMembers)
-                    .ThenInclude(gm => gm.User)
+                // ❌ حذف شد: .Include(c => c.GroupMembers)
                 .Include(c => c.GroupSettings)
                 .FirstOrDefaultAsync(c => c.Id == chatId);
         }
@@ -62,7 +63,6 @@ namespace Solvix.Server.Infrastructure.Repositories
 
             if (existingParticipant != null)
             {
-                // Reactivate if exists but inactive
                 existingParticipant.IsActive = true;
                 existingParticipant.JoinedAt = DateTime.UtcNow;
             }
@@ -72,7 +72,7 @@ namespace Solvix.Server.Infrastructure.Repositories
                 {
                     ChatId = chatId,
                     UserId = userId,
-                    Role = "Member",
+                    Role = GroupRole.Member, // ✅ اصلاح شد
                     JoinedAt = DateTime.UtcNow,
                     IsActive = true
                 };
@@ -87,7 +87,6 @@ namespace Solvix.Server.Infrastructure.Repositories
 
             if (participant != null)
             {
-                // Soft delete - mark as inactive
                 participant.IsActive = false;
             }
         }
@@ -139,7 +138,8 @@ namespace Solvix.Server.Infrastructure.Repositories
         public async Task<bool> IsUserAdminAsync(Guid chatId, long userId)
         {
             var participant = await GetParticipantAsync(chatId, userId);
-            return participant?.Role == "Admin" || await IsUserOwnerAsync(chatId, userId);
+            // ✅ اصلاح شد: مقایسه با enum
+            return participant?.Role == GroupRole.Admin || await IsUserOwnerAsync(chatId, userId);
         }
 
         public async Task UpdateParticipantRoleAsync(Guid chatId, long userId, string newRole)
@@ -149,7 +149,11 @@ namespace Solvix.Server.Infrastructure.Repositories
 
             if (participant != null)
             {
-                participant.Role = newRole;
+                // ✅ اصلاح شد: تبدیل string به enum
+                if (Enum.TryParse<GroupRole>(newRole, true, out var roleEnum))
+                {
+                    participant.Role = roleEnum;
+                }
             }
         }
 
